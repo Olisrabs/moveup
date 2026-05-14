@@ -88,7 +88,7 @@ export default function DashboardTopbar() {
 
   return (
     <>
-      <header className="lg:pl-64 fixed top-0 left-0 right-0 z-30 border-b border-border bg-background/80 backdrop-blur-xl">
+      <header className="lg:pl-64 fixed top-0 left-0 right-0 z-30 border-b border-border bg-background/95 backdrop-blur-2xl">
         <div className="flex items-center justify-between px-4 sm:px-6 h-16">
           <div className="flex items-center gap-3">
             <button onClick={() => setMobileOpen(true)}
