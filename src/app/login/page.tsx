@@ -4,7 +4,8 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Target, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
@@ -56,7 +57,7 @@ function LoginContent() {
       >
         <div className="text-center mb-8">
           <div className="inline-flex bg-primary text-primary-foreground p-3 rounded-2xl mb-4 shadow-lg shadow-primary/20">
-            <Target size={32} />
+            <Logo size={32} />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">Welcome back</h1>
           <p className="text-muted-foreground mt-2">

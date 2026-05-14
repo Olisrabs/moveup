@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Target, Coins, LayoutDashboard, LogOut, Loader2 } from "lucide-react";
+import { Coins, LayoutDashboard, LogOut, Loader2 } from "lucide-react";
+import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/lib/auth-context";
@@ -34,7 +35,7 @@ export default function Navbar() {
             transition={{ duration: 0.3 }}
             className="bg-primary text-primary-foreground p-1.5 rounded-xl"
           >
-            <Target size={24} />
+            <Logo size={24} />
           </motion.div>
           <span className="font-bold text-xl tracking-tight">MoveUp</span>
         </Link>

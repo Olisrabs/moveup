@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Target, LayoutDashboard, DoorOpen, CheckSquare, Coins,
+  LayoutDashboard, DoorOpen, CheckSquare, Coins,
   Bell, LogOut, Menu, X,
 } from "lucide-react";
+import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "./ThemeToggle";
@@ -136,7 +137,7 @@ export default function DashboardTopbar() {
               className="fixed left-0 top-0 bottom-0 w-72 bg-card border-r border-border z-50 flex flex-col">
               <div className="flex items-center justify-between p-5 border-b border-border">
                 <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
-                  <div className="bg-primary text-primary-foreground p-1.5 rounded-xl"><Target size={18} /></div>
+                  <div className="bg-primary text-primary-foreground p-1.5 rounded-xl"><Logo size={18} /></div>
                   <span className="font-bold text-lg">MoveUp</span>
                 </Link>
                 <button onClick={() => setMobileOpen(false)} className="p-2 rounded-lg text-muted-foreground hover:text-foreground">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Target } from "lucide-react";
+import { Logo } from "./Logo";
 
 // Inline SVGs for brand icons removed from lucide-react v1.x
 const TwitterIcon = ({ size = 20 }: { size?: number }) => (
@@ -28,7 +28,7 @@ export default function Footer() {
           <div className="md:col-span-1 space-y-4">
             <Link href="/" className="flex items-center gap-2 group">
               <div className="bg-primary text-primary-foreground p-1.5 rounded-xl">
-                <Target size={20} />
+                <Logo size={20} />
               </div>
               <span className="font-bold text-lg tracking-tight">MoveUp</span>
             </Link>
@@ -57,13 +57,13 @@ export default function Footer() {
           <div>
             <h4 className="font-semibold mb-4">Connect</h4>
             <div className="flex items-center gap-4 text-muted-foreground">
-              <a href="#" className="hover:text-primary transition-colors">
+              <a target="_blank" href="https://x.com/olisrabs" className="hover:text-primary transition-colors">
                 <TwitterIcon size={20} />
               </a>
-              <a href="#" className="hover:text-primary transition-colors">
+              <a target="_blank" href="https://github.com/Olisrabs/" className="hover:text-primary transition-colors">
                 <GithubIcon size={20} />
               </a>
-              <a href="#" className="hover:text-primary transition-colors">
+              <a target="_blank" href="https://www.linkedin.com/in/olajide-abimbola/" className="hover:text-primary transition-colors">
                 <LinkedinIcon size={20} />
               </a>
             </div>

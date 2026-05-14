@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  Target,
   LayoutDashboard,
   DoorOpen,
   CheckSquare,
@@ -13,6 +12,7 @@ import {
   LogOut,
   ChevronRight,
 } from "lucide-react";
+import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 
@@ -49,7 +49,7 @@ export default function DashboardSidebar() {
             transition={{ duration: 0.3 }}
             className="bg-primary text-primary-foreground p-2 rounded-xl"
           >
-            <Target size={20} />
+             <Logo size={20} />
           </motion.div>
           <span className="font-bold text-lg tracking-tight">MoveUp</span>
         </Link>

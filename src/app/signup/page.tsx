@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Target, ArrowRight, Loader2, HandCoins, AlertCircle, CheckCircle } from "lucide-react";
+import { ArrowRight, Loader2, HandCoins, AlertCircle, CheckCircle } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { supabase } from "@/lib/supabase";
 
 export default function Signup() {
@@ -101,7 +102,7 @@ export default function Signup() {
       >
         <div className="text-center mb-8">
           <div className="inline-flex bg-primary text-primary-foreground p-3 rounded-2xl mb-4 shadow-lg shadow-primary/20">
-            <Target size={32} />
+            <Logo size={32} />
           </div>
           <h1 className="text-3xl font-bold tracking-tight">
             Create an account
