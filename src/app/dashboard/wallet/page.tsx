@@ -57,6 +57,8 @@ export default function WalletPage() {
   const [loadingAdmin, setLoadingAdmin] = useState(false);
   const [adminProcessingId, setAdminProcessingId] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetStatus, setResetStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     if (!user) return;
@@ -278,6 +280,45 @@ export default function WalletPage() {
     }
   };
 
+  // ─── Reset All Rooms & Notify (Admin only) ────────────────────────────────
+  const handleResetRooms = async () => {
+    if (!confirm("Are you absolutely sure you want to remove everyone from all active rooms and send out notifications? This action cannot be undone.")) return;
+    setResetLoading(true);
+    setResetStatus(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setResetStatus({ success: false, message: "Authentication token expired. Please reload." });
+        setResetLoading(false);
+        return;
+      }
+
+      const res = await fetch("/api/admin/reset-rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setResetStatus({ success: false, message: data.error || "Failed to reset rooms." });
+      } else {
+        setResetStatus({
+          success: true,
+          message: `Successfully checked out all members. Sent notifications to ${data.affectedUsers} affected users. (SMTP Email Sent: ${data.smtpConfigured ? "Yes" : "No - SMTP Server not configured on Netlify"})`,
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setResetStatus({ success: false, message: err?.message || "An unexpected error occurred." });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const inputClass = "w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all";
   const currentBalance = Number(profile?.balance ?? 0);
 
@@ -472,6 +513,43 @@ export default function WalletPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Admin System Management ────────────────────────────────────────────── */}
+      {profile?.is_admin && (
+        <div className="border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl p-6 mt-8 space-y-4">
+          <h3 className="font-bold text-amber-500 flex items-center gap-2">
+            <ShieldAlert size={18} /> Admin Settings &amp; Actions
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Administrative tools to manage platform-wide features and user memberships.
+          </p>
+
+          <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-amber-500">Reset Room Members &amp; Notify Everyone</h4>
+              <p className="text-xs text-muted-foreground">
+                This will automatically remove everyone from all active rooms and send them in-app and email notifications (if SMTP is configured) telling them to fund their wallet to join back.
+              </p>
+            </div>
+            
+            {resetStatus && (
+              <div className={`p-3 rounded-xl text-xs ${
+                resetStatus.success ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-500" : "bg-red-500/10 border border-red-500/20 text-red-500"
+              }`}>
+                {resetStatus.message}
+              </div>
+            )}
+
+            <button
+              onClick={handleResetRooms}
+              disabled={resetLoading}
+              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-all disabled:opacity-50"
+            >
+              {resetLoading ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />} Reset All Rooms &amp; Notify Everyone
+            </button>
+          </div>
         </div>
       )}
 
