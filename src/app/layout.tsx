@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   title: "MoveUp - Accountability Platform",
   description:
     "Join private rooms, commit to tasks, upload proof, and compete for the reward pool.",
+  icons: {
+    icon: "/moveup.png",
+    apple: "/moveup.png",
+  },
 };
 
 export default function RootLayout({
