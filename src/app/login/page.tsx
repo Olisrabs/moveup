@@ -98,7 +98,7 @@ function LoginContent() {
                 <label htmlFor="password" className="text-sm font-medium">
                   Password
                 </label>
-                <Link href="#" className="text-xs text-primary hover:underline">
+                <Link href="/forgot-password" className="text-xs text-primary hover:underline">
                   Forgot password?
                 </Link>
               </div>

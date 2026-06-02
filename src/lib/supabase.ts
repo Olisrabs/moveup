@@ -17,7 +17,8 @@ export type UserProfile = {
   id: string;
   email: string | null;
   display_name: string | null;
-  coins: number;
+  balance: number; // Naira, stored as NUMERIC(12,2)
+  is_admin?: boolean;
   created_at: string;
 };
 
@@ -27,12 +28,13 @@ export type Room = {
   name: string;
   description: string | null;
   duration_days: number;
-  commitment_fee: number;
+  commitment_fee: number; // Naira, stored as NUMERIC(12,2)
   max_members: number | null;
   created_by: string;
   status: 'active' | 'completed';
   created_at: string;
   ends_at: string;
+  prize_distributed: boolean;
 };
 
 export type RoomMember = {
@@ -65,24 +67,25 @@ export type Proof = {
   created_at: string;
 };
 
-export type CoinTransaction = {
+export type WalletTransaction = {
   id: string;
   user_id: string;
-  amount: number;
+  amount: number; // Naira
   type:
-    | 'deduction'
-    | 'reward'
-    | 'bonus'
-    | 'buy'
-    | 'transfer_sent'
-    | 'transfer_received'
-    | 'pool_win'
-    | 'pool_loss'
-    | 'task_reward';
+    | 'fund'
+    | 'withdrawal'
+    | 'commitment_fee'
+    | 'prize_1st'
+    | 'prize_2nd'
+    | 'prize_3rd'
+    | 'refund';
   description: string | null;
   related_user_id: string | null;
   created_at: string;
 };
+
+// Keep CoinTransaction as alias for backwards compatibility during transition
+export type CoinTransaction = WalletTransaction;
 
 export type Notification = {
   id: string;
@@ -97,3 +100,23 @@ export type Notification = {
 
 // Task with its associated proofs (from a joined query)
 export type TaskWithProof = Task & { proofs: Proof[] };
+
+export type WithdrawalRequest = {
+  id: string;
+  user_id: string;
+  amount: number;
+  bank_name: string;
+  account_number: string;
+  account_name: string;
+  status: 'pending' | 'completed' | 'rejected';
+  created_at: string;
+  processed_at: string | null;
+  users?: {
+    display_name: string | null;
+    email: string | null;
+  } | null;
+};
+
+// Formatting helper
+export const formatNaira = (amount: number): string =>
+  `₦${Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

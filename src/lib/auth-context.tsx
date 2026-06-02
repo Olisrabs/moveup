@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, type UserProfile } from "./supabase";
+// UserProfile.balance replaces the old UserProfile.coins field (migration_v4)
 
 type AuthContextType = {
   user: User | null;

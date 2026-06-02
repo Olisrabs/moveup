@@ -1,0 +1,40 @@
+MOVEUP - PROJECT OVERVIEW
+
+MoveUp is a premium, gamified accountability platform designed to help individuals and teams achieve their goals through financial and social commitment.
+
+CORE CONCEPT:
+The platform operates on a "Put your money where your mouth is" philosophy. Users join accountability rooms centered around specific habits or goals (e.g., "30 Days of Coding", "Early Morning Fitness"). To join, users commit a "fee" in the form of platform coins.
+
+HOW IT WORKS:
+1. Join a Room: Browse active challenge rooms and commit the required amount of coins.
+2. Daily Tasks: Complete the tasks assigned to that room before the deadline.
+3. Proof of Work: Submit evidence of completion (text, links, or images).
+4. Win the Pool: At the end of the challenge duration, users who successfully completed their tasks split the total pool of committed coins. Those who failed lose their commitment fee.
+
+DESIGN IDENTITY:
+MoveUp follows a "Modern Dark" aesthetic with heavy emphasis on glassmorphism, depth, and smooth motion.
+
+- Brand Logo: Three overlapping circles arranged diagonally upwards, symbolizing a stairway to success and continuous growth.
+- Primary Font: 'Inter' (Sans-serif) - chosen for its exceptional readability and modern, technical feel.
+- Color Palette (Dark Mode):
+    * Primary (Action): #6366f1 (Indigo/Violet) - Used for buttons, active states, and highlights.
+    * Accent (Success): #10b981 (Emerald) - Used for task completion, rewards, and positive feedback.
+    * Background: #0f1115 (Deep Midnight) - A custom near-black for reduced eye strain and high contrast.
+    * Card/Glass: rgba(15, 17, 21, 0.85) with 24px backdrop blur - Creates a sophisticated "frosted glass" layered effect.
+    * Border: rgba(255, 255, 255, 0.08) - Subtle outlines to define boundaries without visual noise.
+
+KEY FEATURES:
+- Dynamic Dashboard: Track active rooms, pending tasks, and coin balance in real-time.
+- Leaderboards: See how you rank against other members in terms of consistency and coins won.
+- Proof System: A robust verification system where members can see each other's proof of work.
+- Real-time Notifications: Stay updated on room activity, member joins, and task completions.
+- Motion UI: Powered by Framer Motion for liquid transitions, staggered list entries, and interactive hover states.
+
+TECHNICAL STACK:
+- Frontend: Next.js 16 (App Router)
+- Styling: Tailwind CSS (v4)
+- Animations: Framer Motion
+- Backend/Auth: Supabase (PostgreSQL, Realtime, Storage)
+- Deployment: Netlify
+
+MoveUp turns self-improvement into a high-stakes, rewarding game, fostering a community of achievers who hold each other accountable.

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Coins,
+  Wallet,
   DoorOpen,
   CheckSquare,
   Clock,
@@ -14,7 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { supabase, type Room, type Task } from "@/lib/supabase";
+import { supabase, type Room, type Task, formatNaira } from "@/lib/supabase";
 
 type RoomWithMembers = Room & { member_count: number };
 
@@ -50,6 +50,7 @@ export default function DashboardOverview() {
           .select("*")
           .in("id", roomIds)
           .eq("status", "active")
+          .gt("ends_at", new Date().toISOString())
           .order("created_at", { ascending: false })
           .limit(4);
 
@@ -106,9 +107,9 @@ export default function DashboardOverview() {
       bg: "bg-orange-500/10",
     },
     {
-      label: "Coin Balance",
-      value: profile?.coins ?? 0,
-      icon: Coins,
+      label: "Wallet Balance",
+      value: formatNaira(profile?.balance ?? 0),
+      icon: Wallet,
       color: "text-primary",
       bg: "bg-primary/10",
     },
@@ -137,10 +138,10 @@ export default function DashboardOverview() {
             </p>
           </div>
           <div className="flex items-center gap-2 bg-white/15 backdrop-blur px-5 py-3 rounded-2xl">
-            <Coins size={22} />
+            <Wallet size={22} />
             <div>
-              <p className="text-xs text-white/70">Coin Balance</p>
-              <p className="text-2xl font-bold">{profile?.coins ?? 0}</p>
+              <p className="text-xs text-white/70">Wallet Balance</p>
+              <p className="text-2xl font-bold">{formatNaira(profile?.balance ?? 0)}</p>
             </div>
           </div>
         </div>
@@ -231,7 +232,7 @@ export default function DashboardOverview() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-primary">
-                        {room.commitment_fee * room.member_count} coins
+                        {formatNaira(Number(room.commitment_fee) * room.member_count)}
                       </p>
                       <p className="text-xs text-muted-foreground">pool</p>
                     </div>
@@ -343,9 +344,9 @@ export default function DashboardOverview() {
               icon: CheckSquare,
             },
             {
-              label: "View Coins",
-              desc: "Check your earnings & history",
-              href: "/dashboard/coins",
+              label: "My Wallet",
+              desc: "View balance, fund & withdraw",
+              href: "/dashboard/wallet",
               icon: TrendingUp,
             },
           ].map((action) => (

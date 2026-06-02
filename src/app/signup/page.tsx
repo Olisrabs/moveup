@@ -51,7 +51,7 @@ export default function Signup() {
       id: userId,
       email,
       display_name: displayName,
-      coins: 100,
+      balance: 0,
     });
 
     // 3. If email confirmation is disabled, redirect immediately
@@ -79,7 +79,7 @@ export default function Signup() {
             <h2 className="text-2xl font-bold mb-3">Check your email!</h2>
             <p className="text-muted-foreground">
               We sent a confirmation link to <strong>{email}</strong>. Click it
-              to activate your account and start earning coins.
+              to activate your account and start your journey.
             </p>
             <Link
               href="/login"
@@ -108,7 +108,7 @@ export default function Signup() {
             Create an account
           </h1>
           <p className="text-muted-foreground mt-2">
-            Join MoveUp and get your first 100 coins free.
+            Join MoveUp and start your accountability challenges.
           </p>
         </div>
 
@@ -176,9 +176,7 @@ export default function Signup() {
             <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl flex items-start gap-3 mt-2">
               <HandCoins className="text-primary shrink-0 mt-0.5" size={20} />
               <p className="text-sm text-primary/90">
-                <strong>Bonus!</strong> Creating an account instantly grants you{" "}
-                <strong>100 default coins</strong> to join your first challenge
-                rooms.
+                <strong>Real Money:</strong> MoveUp uses Naira (₦). Fund your wallet with at least ₦500 to join commitment-fee challenge rooms.
               </p>
             </div>
 

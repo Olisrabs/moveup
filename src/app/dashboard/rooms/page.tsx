@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   DoorOpen, Plus, Users, Clock, Copy, Check, X,
   Loader2, Hash, Trophy, Medal, Star, ChevronRight, BarChart3,
   ArrowLeft, CheckCircle2, Clock3, Link as LinkIcon, FileText, ImageIcon,
+  Trash2, Gift, AlertCircle, Wallet,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { supabase, type Room, type TaskWithProof } from "@/lib/supabase";
+import { supabase, type Room, type TaskWithProof, formatNaira } from "@/lib/supabase";
 
 type RoomWithMembers = Room & { member_count: number };
 type LeaderboardEntry = {
@@ -20,7 +21,7 @@ type LeaderboardEntry = {
 };
 
 export default function RoomsPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [rooms, setRooms] = useState<RoomWithMembers[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -41,7 +42,7 @@ export default function RoomsPage() {
   // Create form
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", duration_days: "30", commitment_fee: "10", max_members: "" });
+  const [form, setForm] = useState({ name: "", description: "", duration_days: "30", commitment_fee: "500", max_members: "" });
 
   // Join form
   const [joinCode, setJoinCode] = useState("");
@@ -49,7 +50,14 @@ export default function RoomsPage() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
-  const fetchRooms = async () => {
+  // Prize distribution & room deletion
+  const [distributing, setDistributing] = useState(false);
+  const [distributeError, setDistributeError] = useState<string | null>(null);
+  const [distributeSuccess, setDistributeSuccess] = useState(false);
+  const [deletingRoom, setDeletingRoom] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const fetchRooms = useCallback(async () => {
     if (!user) return;
     const { data: memberRows } = await supabase.from("room_members").select("room_id").eq("user_id", user.id);
     const ids = (memberRows ?? []).map((m) => m.room_id);
@@ -63,7 +71,7 @@ export default function RoomsPage() {
     );
     setRooms(withCounts);
     setLoading(false);
-  };
+  }, [user]);
 
   useEffect(() => { fetchRooms(); /* eslint-disable-next-line */ }, [user]);
 
@@ -129,21 +137,37 @@ export default function RoomsPage() {
 
   const generateCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
+  const isRoomExpired = (room: RoomWithMembers) => new Date(room.ends_at).getTime() < Date.now();
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setCreating(true); setCreateError(null);
+    const fee = parseFloat(form.commitment_fee);
+    const currentBalance = Number(profile?.balance ?? 0);
+    if (currentBalance < fee) {
+      setCreateError(`Insufficient wallet balance. You need ${formatNaira(fee)} to create this room but your balance is ${formatNaira(currentBalance)}.`);
+      setCreating(false); return;
+    }
     const endsAt = new Date(Date.now() + parseInt(form.duration_days) * 86400000).toISOString();
     const { data: roomData, error } = await supabase.from("rooms").insert({
       code: generateCode(), name: form.name, description: form.description || null,
-      duration_days: parseInt(form.duration_days), commitment_fee: parseInt(form.commitment_fee),
+      duration_days: parseInt(form.duration_days), commitment_fee: fee,
       max_members: form.max_members ? parseInt(form.max_members) : null,
       created_by: user.id, ends_at: endsAt,
     }).select().single();
     if (error) { setCreateError(error.message); setCreating(false); return; }
+    // Deduct commitment fee from creator's balance
+    const newBalance = currentBalance - fee;
+    await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
+    await supabase.from("wallet_transactions").insert({
+      user_id: user.id, amount: fee, type: "commitment_fee",
+      description: `Commitment fee for room "${form.name}"`,
+    });
     await supabase.from("room_members").insert({ room_id: roomData.id, user_id: user.id, room_display_name: profile?.display_name || form.name });
+    await refreshProfile();
     setShowCreate(false);
-    setForm({ name: "", description: "", duration_days: "30", commitment_fee: "10", max_members: "" });
+    setForm({ name: "", description: "", duration_days: "30", commitment_fee: "500", max_members: "" });
     fetchRooms(); setCreating(false);
   };
 
@@ -153,12 +177,25 @@ export default function RoomsPage() {
     setJoining(true); setJoinError(null);
     const { data: room, error } = await supabase.from("rooms").select("*").eq("code", joinCode.toUpperCase()).eq("status", "active").single();
     if (error || !room) { setJoinError("Room not found or no longer active."); setJoining(false); return; }
+    // Check balance
+    const fee = Number(room.commitment_fee);
+    const currentBalance = Number(profile?.balance ?? 0);
+    if (currentBalance < fee) {
+      setJoinError(`Insufficient wallet balance. This room requires ${formatNaira(fee)} but your balance is ${formatNaira(currentBalance)}. Fund your wallet first.`);
+      setJoining(false); return;
+    }
     const { error: joinErr } = await supabase.from("room_members").insert({
       room_id: room.id, user_id: user.id, room_display_name: joinName || profile?.display_name || "Member",
     });
     if (joinErr) { setJoinError(joinErr.code === "23505" ? "You are already a member of this room." : joinErr.message); setJoining(false); return; }
-
-    // Notify existing members about new join
+    // Deduct fee
+    const newBalance = currentBalance - fee;
+    await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
+    await supabase.from("wallet_transactions").insert({
+      user_id: user.id, amount: fee, type: "commitment_fee",
+      description: `Commitment fee for joining "${room.name}"`,
+    });
+    // Notify existing members
     const { data: existingMembers } = await supabase.from("room_members").select("user_id").eq("room_id", room.id).neq("user_id", user.id);
     if (existingMembers && existingMembers.length > 0) {
       await supabase.from("notifications").insert(
@@ -169,9 +206,75 @@ export default function RoomsPage() {
         }))
       );
     }
-
+    await refreshProfile();
     setShowJoin(false); setJoinCode(""); setJoinName("");
     fetchRooms(); setJoining(false);
+  };
+
+  const distributePrizes = async () => {
+    if (!selectedRoom || !user) return;
+    setDistributing(true); setDistributeError(null);
+    // Re-fetch leaderboard
+    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, users(display_name)").eq("room_id", selectedRoom.id);
+    if (!members || members.length === 0) { setDistributeError("No members found."); setDistributing(false); return; }
+    const entries = await Promise.all(members.map(async (m) => {
+      const [{ count: total }, { count: done }] = await Promise.all([
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id).eq("status", "completed"),
+      ]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ud = m.users as any;
+      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total: total ?? 0, done: done ?? 0, pct: (total ?? 0) > 0 ? (done ?? 0) / (total ?? 0) : 0 };
+    }));
+    entries.sort((a, b) => b.pct - a.pct || b.done - a.done);
+    const totalPool = Number(selectedRoom.commitment_fee) * selectedRoom.member_count;
+    const prizeTypes: Array<'prize_1st' | 'prize_2nd' | 'prize_3rd'> = ['prize_1st', 'prize_2nd', 'prize_3rd'];
+    const prizeLabels = ['1st place', '2nd place', '3rd place'];
+    // If fewer than 4 members, only 1st gets everything
+    const splits = selectedRoom.member_count < 4 ? [1, 0, 0] : [0.5, 0.3, 0.2];
+    const notifications: { user_id: string; message: string; is_read: boolean; type: string; room_id: string }[] = [];
+    for (let i = 0; i < Math.min(entries.length, 3); i++) {
+      const pct = splits[i];
+      if (pct === 0) continue;
+      const prize = totalPool * pct;
+      const { data: ub } = await supabase.from("users").select("balance").eq("id", entries[i].user_id).single();
+      const newBal = Number(ub?.balance ?? 0) + prize;
+      await supabase.from("users").update({ balance: newBal }).eq("id", entries[i].user_id);
+      await supabase.from("wallet_transactions").insert({
+        user_id: entries[i].user_id, amount: prize, type: prizeTypes[i],
+        description: `${prizeLabels[i]} prize from room "${selectedRoom.name}" — ${formatNaira(prize)}`,
+      });
+      notifications.push({
+        user_id: entries[i].user_id, room_id: selectedRoom.id,
+        message: `🏆 You finished ${prizeLabels[i]} in "${selectedRoom.name}"! ${formatNaira(prize)} has been credited to your wallet.`,
+        is_read: false, type: "prize_credit",
+      });
+    }
+    // Notify all other members
+    for (const m of members) {
+      if (!entries.slice(0, 3).find(e => e.user_id === m.user_id)) {
+        notifications.push({
+          user_id: m.user_id, room_id: selectedRoom.id,
+          message: `🏁 The room "${selectedRoom.name}" has ended. Prizes have been distributed to the top performers.`,
+          is_read: false, type: "room_ended",
+        });
+      }
+    }
+    if (notifications.length > 0) await supabase.from("notifications").insert(notifications);
+    await supabase.from("rooms").update({ prize_distributed: true, status: "completed" }).eq("id", selectedRoom.id);
+    await refreshProfile();
+    setDistributeSuccess(true);
+    setTimeout(() => { setDistributeSuccess(false); setSelectedRoom(null); backToLeaderboard(); fetchRooms(); }, 2000);
+    setDistributing(false);
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!selectedRoom || !user) return;
+    setDeletingRoom(true); setDeleteError(null);
+    if (!isRoomExpired(selectedRoom)) { setDeleteError("You can only delete a room after it has expired."); setDeletingRoom(false); return; }
+    const { error } = await supabase.from("rooms").delete().eq("id", selectedRoom.id);
+    if (error) { setDeleteError(error.message); setDeletingRoom(false); return; }
+    setSelectedRoom(null); backToLeaderboard(); fetchRooms(); setDeletingRoom(false);
   };
 
   const copyCode = (code: string, e: React.MouseEvent) => {
@@ -233,7 +336,6 @@ export default function RoomsPage() {
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {rooms.map((room, i) => {
             const daysLeft = getDaysLeft(room.ends_at);
-            const pool = room.commitment_fee * room.member_count;
             return (
               <motion.div key={room.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.07 }}
@@ -262,7 +364,7 @@ export default function RoomsPage() {
                   </div>
                   <div className="bg-secondary/40 rounded-xl p-2.5">
                     <Trophy size={12} className="mx-auto text-muted-foreground mb-1" />
-                    <p className="text-sm font-bold">{pool}</p>
+                    <p className="text-sm font-bold truncate">{formatNaira(Number(room.commitment_fee) * room.member_count)}</p>
                     <p className="text-xs text-muted-foreground">pool</p>
                   </div>
                 </div>
@@ -369,6 +471,49 @@ export default function RoomsPage() {
                       })
                     )}
                     <p className="text-xs text-muted-foreground text-center pt-2">Tap a member to view their tasks &amp; proof</p>
+
+                    {/* Pool summary */}
+                    <div className="bg-secondary/30 rounded-2xl p-4 text-sm">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-muted-foreground">Entry fee</span>
+                        <span className="font-semibold">{formatNaira(Number(selectedRoom.commitment_fee))}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total pool</span>
+                        <span className="font-bold text-primary">{formatNaira(Number(selectedRoom.commitment_fee) * selectedRoom.member_count)}</span>
+                      </div>
+                      {selectedRoom.member_count < 4 && <p className="text-xs text-muted-foreground mt-2">⚡ 1st place wins the full pool (fewer than 4 members)</p>}
+                      {selectedRoom.member_count >= 4 && <p className="text-xs text-muted-foreground mt-2">🏆 50% · 🥈 30% · 🥉 20%</p>}
+                    </div>
+
+                    {/* Prize distribution & delete — only for creator, only after expiry */}
+                    {isRoomExpired(selectedRoom) && selectedRoom.created_by === user?.id && (
+                      <div className="space-y-2 pt-1">
+                        {distributeError && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-xl">{distributeError}</p>}
+                        {deleteError && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-xl">{deleteError}</p>}
+                        {!selectedRoom.prize_distributed ? (
+                          <button onClick={distributePrizes} disabled={distributing || distributeSuccess}
+                            className="w-full flex items-center justify-center gap-2 bg-yellow-500 text-white py-3 rounded-xl font-semibold text-sm hover:bg-yellow-600 transition-all disabled:opacity-70">
+                            {distributeSuccess ? <><Check size={16} /> Prizes Distributed!</> :
+                             distributing ? <><Loader2 size={16} className="animate-spin" /> Distributing…</> :
+                             <><Gift size={16} /> Settle &amp; Distribute Prizes</>}
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-emerald-500 bg-emerald-500/10 px-4 py-2.5 rounded-xl">
+                            <Check size={16} /> Prizes already distributed
+                          </div>
+                        )}
+                        <button onClick={handleDeleteRoom} disabled={deletingRoom}
+                          className="w-full flex items-center justify-center gap-2 border border-red-500/30 text-red-500 py-2.5 rounded-xl font-medium text-sm hover:bg-red-500/10 transition-all disabled:opacity-70">
+                          {deletingRoom ? <><Loader2 size={16} className="animate-spin" /> Deleting…</> : <><Trash2 size={14} /> Delete Room</>}
+                        </button>
+                      </div>
+                    )}
+                    {isRoomExpired(selectedRoom) && selectedRoom.created_by !== user?.id && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/30 px-4 py-2.5 rounded-xl">
+                        <AlertCircle size={14} /> Room has expired. Waiting for creator to distribute prizes.
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
@@ -495,9 +640,10 @@ export default function RoomsPage() {
                     value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Entry Fee (coins)</label>
+                  <label className="text-sm font-medium">Entry Fee (₦)</label>
                   <input type="number" min={1} required className={inputClass}
                     value={form.commitment_fee} onChange={(e) => setForm({ ...form, commitment_fee: e.target.value })} />
+                  <p className="text-xs text-muted-foreground">Amount each member (including you) must pay to join</p>
                 </div>
               </div>
               <div className="space-y-1.5">

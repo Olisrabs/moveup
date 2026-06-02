@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Coins, LayoutDashboard, LogOut, Loader2 } from "lucide-react";
+import { Wallet, LayoutDashboard, LogOut, Loader2 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/lib/auth-context";
+import { formatNaira } from "@/lib/supabase";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -81,10 +82,10 @@ export default function Navbar() {
                 exit={{ opacity: 0, x: 10 }}
                 className="flex items-center gap-3"
               >
-                {/* Coin balance chip */}
+                {/* Wallet balance chip */}
                 <div className="hidden md:flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm font-medium">
-                  <Coins size={14} />
-                  <span>{profile?.coins ?? 0}</span>
+                  <Wallet size={14} />
+                  <span>{formatNaira(profile?.balance ?? 0)}</span>
                 </div>
 
                 {/* Dashboard link */}

@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   DoorOpen,
   CheckSquare,
-  Coins,
+  Wallet,
   Bell,
   LogOut,
   ChevronRight,
@@ -15,12 +15,13 @@ import {
 import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { formatNaira } from "@/lib/supabase";
 
 const navItems = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard, exact: true },
   { label: "My Rooms", href: "/dashboard/rooms", icon: DoorOpen },
   { label: "Tasks", href: "/dashboard/tasks", icon: CheckSquare },
-  { label: "Coins", href: "/dashboard/coins", icon: Coins },
+  { label: "Wallet", href: "/dashboard/wallet", icon: Wallet },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
 ];
 
@@ -95,11 +96,11 @@ export default function DashboardSidebar() {
         {/* Coin balance */}
         <div className="flex items-center justify-between bg-primary/10 px-4 py-2.5 rounded-xl">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <Coins size={16} />
-            <span>Coins</span>
+            <Wallet size={16} />
+            <span>Wallet</span>
           </div>
           <span className="font-bold text-primary text-sm">
-            {profile?.coins ?? 0}
+            {formatNaira(profile?.balance ?? 0)}
           </span>
         </div>
 

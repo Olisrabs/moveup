@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, DoorOpen, CheckSquare, Coins,
+  LayoutDashboard, DoorOpen, CheckSquare, Wallet,
   Bell, LogOut, Menu, X,
 } from "lucide-react";
 import { Logo } from "./Logo";
@@ -13,12 +13,13 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/lib/supabase";
+import { formatNaira } from "@/lib/supabase";
 
 const navItems = [
   { label: "Overview",      href: "/dashboard",               icon: LayoutDashboard, exact: true },
   { label: "My Rooms",      href: "/dashboard/rooms",         icon: DoorOpen },
   { label: "Tasks",         href: "/dashboard/tasks",         icon: CheckSquare },
-  { label: "Coins",         href: "/dashboard/coins",         icon: Coins },
+  { label: "Wallet",        href: "/dashboard/wallet",        icon: Wallet },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
 ];
 
@@ -26,7 +27,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard":               "Overview",
   "/dashboard/rooms":         "My Rooms",
   "/dashboard/tasks":         "Tasks",
-  "/dashboard/coins":         "Coins",
+  "/dashboard/wallet":        "Wallet",
   "/dashboard/notifications": "Notifications",
 };
 
@@ -167,9 +168,9 @@ export default function DashboardTopbar() {
               <div className="p-4 border-t border-border">
                 <div className="flex items-center justify-between bg-primary/10 px-4 py-2.5 rounded-xl mb-3">
                   <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                    <Coins size={14} /><span>Coins</span>
+                    <Wallet size={14} /><span>Wallet</span>
                   </div>
-                  <span className="font-bold text-primary text-sm">{profile?.coins ?? 0}</span>
+                  <span className="font-bold text-primary text-sm">{formatNaira(profile?.balance ?? 0)}</span>
                 </div>
                 <button onClick={handleSignOut}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-500 hover:bg-red-500/10 transition-colors">
