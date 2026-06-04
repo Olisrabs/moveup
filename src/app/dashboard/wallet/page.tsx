@@ -302,20 +302,13 @@ export default function WalletPage() {
         },
       });
 
-      if (!res.ok) {
-        let errMsg = `Request failed with status ${res.status}`;
-        try {
-          const data = await res.json();
-          errMsg = data.error || errMsg;
-        } catch {
-          // ignore parsing error for non-JSON content
-        }
-        setResetStatus({ success: false, message: errMsg });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setResetStatus({ success: false, message: data.error || "Failed to reset rooms." });
       } else {
-        const data = await res.json();
         setResetStatus({
           success: true,
-          message: `Successfully checked out all members and deleted all tasks. Sent notifications to ${data.affectedUsers} affected users. (SMTP Email Sent: ${data.smtpConfigured ? "Yes" : "No - SMTP Server not configured on Netlify"})`,
+          message: `Successfully checked out all members. Sent notifications to ${data.affectedUsers} affected users. (SMTP Email Sent: ${data.smtpConfigured ? "Yes" : "No - SMTP Server not configured on Netlify"})`,
         });
       }
     } catch (err: any) {

@@ -6,8 +6,7 @@ import {
   DoorOpen, Plus, Users, Clock, Copy, Check, X,
   Loader2, Hash, Trophy, Medal, Star, ChevronRight, BarChart3,
   ArrowLeft, CheckCircle2, Clock3, Link as LinkIcon, FileText, ImageIcon,
-  Trash2, Gift, AlertCircle, Wallet, RotateCcw,
-
+  Trash2, Gift, AlertCircle, Wallet, Bell,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Room, type TaskWithProof, formatNaira } from "@/lib/supabase";
@@ -18,10 +17,8 @@ type LeaderboardEntry = {
   display_name: string;
   total_tasks: number;
   completed_tasks: number;
-  completion_pct: number;  // simple completion rate
-  ai_score: number;        // cumulative AI score (can exceed 100)
+  percentage: number;
 };
-
 
 export default function RoomsPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -41,6 +38,82 @@ export default function RoomsPage() {
   const [viewingMember, setViewingMember] = useState<LeaderboardEntry | null>(null);
   const [memberTasks, setMemberTasks] = useState<TaskWithProof[]>([]);
   const [loadingMemberTasks, setLoadingMemberTasks] = useState(false);
+
+  // Nudge / Reminder states
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [reminderSuccess, setReminderSuccess] = useState(false);
+
+  // Cooldown effect
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownSeconds]);
+
+  const checkCooldown = (lastReminderAt: string | null) => {
+    if (!lastReminderAt) return 0;
+    const elapsed = Date.now() - new Date(lastReminderAt).getTime();
+    const remaining = Math.max(0, Math.ceil((30 * 60 * 1000 - elapsed) / 1000));
+    return remaining;
+  };
+
+  const formatCooldown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleSendReminder = async () => {
+    if (!selectedRoom || !user) return;
+    setSendingReminder(true);
+    setReminderError(null);
+    setReminderSuccess(false);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setReminderError("Authentication token expired. Please reload.");
+        setSendingReminder(false);
+        return;
+      }
+
+      const res = await fetch("/api/rooms/remind", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ roomId: selectedRoom.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setReminderError(data.error || "Failed to send reminder.");
+        if (data.cooldownRemaining) {
+          setCooldownSeconds(Math.ceil(data.cooldownRemaining / 1000));
+        }
+        setSendingReminder(false);
+        return;
+      }
+
+      setReminderSuccess(true);
+      const updatedRoom = { ...selectedRoom, last_reminder_at: data.lastReminderAt };
+      setSelectedRoom(updatedRoom);
+      setCooldownSeconds(checkCooldown(data.lastReminderAt));
+      setRooms((prev) => prev.map((r) => r.id === selectedRoom.id ? { ...r, last_reminder_at: data.lastReminderAt } : r));
+
+      setTimeout(() => setReminderSuccess(false), 3000);
+    } catch (err: any) {
+      setReminderError(err?.message || "An unexpected error occurred.");
+    } finally {
+      setSendingReminder(false);
+    }
+  };
 
   // Create form
   const [creating, setCreating] = useState(false);
@@ -79,13 +152,23 @@ export default function RoomsPage() {
   useEffect(() => { fetchRooms(); /* eslint-disable-next-line */ }, [user]);
 
   const fetchLeaderboard = async (room: RoomWithMembers) => {
-    setSelectedRoom(room);
+    // Fetch latest room data to get exact last_reminder_at
+    const { data: freshRoom } = await supabase
+      .from("rooms")
+      .select("*")
+      .eq("id", room.id)
+      .single();
+
+    const currentRoom = freshRoom ? { ...room, ...freshRoom } : room;
+    setSelectedRoom(currentRoom);
+    setCooldownSeconds(checkCooldown(currentRoom.last_reminder_at));
+
     setLoadingBoard(true);
     setLeaderboard([]);
 
     const { data: members } = await supabase
       .from("room_members")
-      .select("user_id, room_display_name, ai_score, users(display_name)")
+      .select("user_id, room_display_name, users(display_name)")
       .eq("room_id", room.id);
 
     if (!members || members.length === 0) { setLoadingBoard(false); return; }
@@ -105,18 +188,15 @@ export default function RoomsPage() {
           display_name: userData?.display_name || m.room_display_name || "Unknown",
           total_tasks: total,
           completed_tasks: done,
-          completion_pct: total > 0 ? Math.round((done / total) * 100) : 0,
-          ai_score: Number(m.ai_score ?? 0),
+          percentage: total > 0 ? Math.round((done / total) * 100) : 0,
         };
       })
     );
 
-    // Rank by AI score (highest first). Tie-break by completed tasks.
-    entries.sort((a, b) => b.ai_score - a.ai_score || b.completed_tasks - a.completed_tasks);
+    entries.sort((a, b) => b.percentage - a.percentage || b.completed_tasks - a.completed_tasks);
     setLeaderboard(entries);
     setLoadingBoard(false);
   };
-
 
   const fetchMemberTasks = async (entry: LeaderboardEntry) => {
     if (!selectedRoom) return;
@@ -220,8 +300,8 @@ export default function RoomsPage() {
   const distributePrizes = async () => {
     if (!selectedRoom || !user) return;
     setDistributing(true); setDistributeError(null);
-    // Re-fetch members with ai_score
-    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, ai_score, users(display_name)").eq("room_id", selectedRoom.id);
+    // Re-fetch leaderboard
+    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, users(display_name)").eq("room_id", selectedRoom.id);
     if (!members || members.length === 0) { setDistributeError("No members found."); setDistributing(false); return; }
     const entries = await Promise.all(members.map(async (m) => {
       const [{ count: total }, { count: done }] = await Promise.all([
@@ -230,17 +310,9 @@ export default function RoomsPage() {
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ud = m.users as any;
-      return {
-        user_id: m.user_id,
-        display_name: ud?.display_name || m.room_display_name || "Unknown",
-        total: total ?? 0,
-        done: done ?? 0,
-        ai_score: Number(m.ai_score ?? 0),
-      };
+      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total: total ?? 0, done: done ?? 0, pct: (total ?? 0) > 0 ? (done ?? 0) / (total ?? 0) : 0 };
     }));
-    // Sort by AI score (winner = highest total AI score in this room)
-    entries.sort((a, b) => b.ai_score - a.ai_score || b.done - a.done);
-
+    entries.sort((a, b) => b.pct - a.pct || b.done - a.done);
     const totalPool = Number(selectedRoom.commitment_fee) * selectedRoom.member_count;
     const prizeTypes: Array<'prize_1st' | 'prize_2nd' | 'prize_3rd'> = ['prize_1st', 'prize_2nd', 'prize_3rd'];
     const prizeLabels = ['1st place', '2nd place', '3rd place'];
@@ -433,16 +505,6 @@ export default function RoomsPage() {
                     </>
                   )}
                 </div>
-                {/* Refresh leaderboard scores */}
-                {drawerView === 'leaderboard' && selectedRoom && (
-                  <button
-                    onClick={() => fetchLeaderboard(selectedRoom)}
-                    title="Refresh scores"
-                    className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
-                  >
-                    <RotateCcw size={16} />
-                  </button>
-                )}
                 <button onClick={() => { setSelectedRoom(null); backToLeaderboard(); }}
                   className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors shrink-0">
                   <X size={18} />
@@ -463,8 +525,6 @@ export default function RoomsPage() {
                     ) : (
                       leaderboard.map((entry, i) => {
                         const isMe = entry.user_id === user?.id;
-                        const topScore = leaderboard[0]?.ai_score || 1;
-                        const barWidth = Math.min(100, (entry.ai_score / topScore) * 100);
                         return (
                           <motion.button key={entry.user_id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: i * 0.05 }}
@@ -478,17 +538,17 @@ export default function RoomsPage() {
                                 <p className="text-sm font-semibold truncate">
                                   {entry.display_name}{isMe && <span className="text-xs text-primary font-normal ml-1">(you)</span>}
                                 </p>
-                                <p className="text-xs text-muted-foreground">{entry.completed_tasks}/{entry.total_tasks} tasks · {entry.completion_pct}% done</p>
+                                <p className="text-xs text-muted-foreground">{entry.completed_tasks}/{entry.total_tasks} tasks</p>
                               </div>
-                              <div className="text-right shrink-0">
-                                <p className={`text-sm font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-foreground'}`}>
-                                  {entry.ai_score.toFixed(1)}%
-                                </p>
-                                <p className="text-xs text-muted-foreground">AI score</p>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-sm font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-foreground'}`}>
+                                  {entry.percentage}%
+                                </span>
+                                <ChevronRight size={14} className="text-muted-foreground" />
                               </div>
                             </div>
                             <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                              <motion.div initial={{ width: 0 }} animate={{ width: `${barWidth}%` }}
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${entry.percentage}%` }}
                                 transition={{ delay: i * 0.05 + 0.2, duration: 0.6, ease: 'easeOut' }}
                                 className={`h-full rounded-full ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-600' : 'bg-primary'}`} />
                             </div>
@@ -496,7 +556,6 @@ export default function RoomsPage() {
                         );
                       })
                     )}
-
                     <p className="text-xs text-muted-foreground text-center pt-2">Tap a member to view their tasks &amp; proof</p>
 
                     {/* Pool summary */}
@@ -512,6 +571,28 @@ export default function RoomsPage() {
                       {selectedRoom.member_count < 4 && <p className="text-xs text-muted-foreground mt-2">⚡ 1st place wins the full pool (fewer than 4 members)</p>}
                       {selectedRoom.member_count >= 4 && <p className="text-xs text-muted-foreground mt-2">🏆 50% · 🥈 30% · 🥉 20%</p>}
                     </div>
+
+                    {/* Send Reminder — for any member, only when room is active */}
+                    {!isRoomExpired(selectedRoom) && (
+                      <div className="space-y-2 pt-1">
+                        {reminderError && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-xl">{reminderError}</p>}
+                        {reminderSuccess && <p className="text-xs text-emerald-500 bg-emerald-500/10 px-3 py-2 rounded-xl">🔔 Reminder sent to all members!</p>}
+                        
+                        <button
+                          onClick={handleSendReminder}
+                          disabled={sendingReminder || cooldownSeconds > 0}
+                          className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-all disabled:opacity-60 shadow-lg shadow-primary/10"
+                        >
+                          {sendingReminder ? (
+                            <><Loader2 size={16} className="animate-spin" /> Sending...</>
+                          ) : cooldownSeconds > 0 ? (
+                            <><Clock size={16} /> Remind Members ({formatCooldown(cooldownSeconds)})</>
+                          ) : (
+                            <><Bell size={16} /> Remind Room Members</>
+                          )}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Prize distribution & delete — only for creator, only after expiry */}
                     {isRoomExpired(selectedRoom) && selectedRoom.created_by === user?.id && (

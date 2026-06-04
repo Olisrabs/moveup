@@ -42,10 +42,8 @@ export type RoomMember = {
   room_id: string;
   user_id: string;
   room_display_name: string;
-  ai_score: number;   // Cumulative AI score for this user in this room (can exceed 100)
   joined_at: string;
 };
-
 
 export type Task = {
   id: string;
@@ -55,11 +53,8 @@ export type Task = {
   description: string | null;
   due_date: string | null;
   status: 'pending' | 'completed';
-  score_percentage: number | null;  // AI-awarded score for this task (0–100)
-  score_breakdown: string | null;   // AI reasoning text
   created_at: string;
 };
-
 
 export type Proof = {
   id: string;

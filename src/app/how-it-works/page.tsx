@@ -1,34 +1,34 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { PlusCircle, KeyRound, UploadCloud, Trophy, Wallet } from "lucide-react";
+import { PlusCircle, KeyRound, UploadCloud, Trophy, HandCoins } from "lucide-react";
 
 export default function HowItWorks() {
   const steps = [
     {
-      icon: <Wallet className="w-8 h-8 text-indigo-400" />,
-      title: "1. Fund Your Wallet",
-      desc: "Sign up and securely fund your wallet with Naira (₦) to join active rooms."
+      icon: <HandCoins className="w-8 h-8 text-indigo-400" />,
+      title: "1. Get Your Coins",
+      desc: "Sign up and instantly receive 100 default coins to start your journey."
     },
     {
       icon: <PlusCircle className="w-8 h-8 text-blue-400" />,
       title: "2. Create or Join a Room",
-      desc: "Create a private accountability room with a customized entry commitment fee (₦) and duration, or join a room using a unique code."
+      desc: "Create a private room with a set duration and commitment fee, or join an existing one using a unique code."
     },
     {
       icon: <KeyRound className="w-8 h-8 text-purple-400" />,
       title: "3. Set Your Tasks",
-      desc: "Once inside, list your personal tasks. These remain private until you decide to complete them."
+      desc: "Once inside, create your private task list. These remain hidden from others until you complete them."
     },
     {
       icon: <UploadCloud className="w-8 h-8 text-emerald-400" />,
-      title: "4. Upload Proof & Get Graded",
-      desc: "Complete a task? Mark it done and submit text descriptions, links, or screenshot images. Our advanced AI scans the proof and updates the room leaderboard."
+      title: "4. Upload Proof",
+      desc: "Finish a task? Mark it complete and upload text, image, or video proof. Everyone in the room will see it and your score goes up."
     },
     {
       icon: <Trophy className="w-8 h-8 text-amber-400" />,
-      title: "5. Win the Pool & Withdraw",
-      desc: "At room expiration, the entry fees pool is distributed to the top performers based on AI scores. Withdraw your winnings directly to your bank account immediately!"
+      title: "5. Win the Pool",
+      desc: "The first person to hit 100% completion takes the entire pooled commitment fee from the room."
     }
   ];
 

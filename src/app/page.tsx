@@ -44,7 +44,7 @@ export default function Home() {
           </motion.h1>
 
           <motion.p variants={itemVariants} className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Create private rooms, set tasks, and deposit a commitment fee (₦). Complete tasks, upload proof verified by our advanced AI, and take the reward pool.
+            Create private rooms, set tasks, and deposit a commitment fee. First to complete all their tasks and upload proof takes the entire reward pool.
           </motion.p>
 
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
@@ -52,7 +52,7 @@ export default function Home() {
               href="/signup"
               className="w-full sm:w-auto bg-primary text-primary-foreground px-8 py-4 rounded-xl font-bold text-lg hover:bg-primary/90 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 shadow-[0_0_40px_-10px_rgba(99,102,241,0.5)]"
             >
-              Get Started Now
+              Start Free (100 Coins Included)
               <ArrowRight size={20} />
             </Link>
             <Link
@@ -72,17 +72,17 @@ export default function Home() {
             {
               icon: <Shield className="text-emerald-500 w-8 h-8" />,
               title: "Private Rooms",
-              desc: "Create exclusive challenge rooms for you and your friends. Set the custom entry fee, duration, and goals.",
+              desc: "Create exclusive challenge rooms for you and your friends. Set the rules and duration.",
             },
             {
               icon: <CheckCircle className="text-blue-500 w-8 h-8" />,
-              title: "AI-Verified Proof",
-              desc: "Upload text, links, or screenshot images. Our advanced AI grading engine scans proof, rates effort, and prevents cheating.",
+              title: "Verifiable Proof",
+              desc: "Upload images, videos, or links to prove you've completed your tasks. Transparency first.",
             },
             {
               icon: <Trophy className="text-amber-500 w-8 h-8" />,
-              title: "Real Money Rewards",
-              desc: "Fund your wallet securely. Winners take home the pooled commitment fees directly to their local bank accounts.",
+              title: "Winner Takes All",
+              desc: "Everyone pays a commitment fee. The first to reach 100% completion wins the entire pool.",
             },
           ].map((feature, i) => (
             <motion.div
@@ -113,12 +113,12 @@ export default function Home() {
           <div className="grid md:grid-cols-2 gap-8">
             {[
               {
-                quote: "I used to write goals and forget them a week later. Staking ₦5,000 on a 30-day coding challenge changed everything. The AI verified my code screenshots, and I actually completed the challenge!",
+                quote: "I used to write goals and forget them a week later. Staking 500 coins on a 30-day coding challenge changed everything. I actually finished it.",
                 author: "Sarah J.",
                 role: "Software Developer"
               },
               {
-                quote: "My friends and I set up a fitness room with a ₦2,000 buy-in. Having the AI review our workout proofs kept us honest, and the shared pool pushed us harder than ever.",
+                quote: "My friends and I set up a fitness room. The competition and the shared reward pool pushed us harder than any gym membership ever did.",
                 author: "Michael T.",
                 role: "Fitness Enthusiast"
               }
@@ -150,10 +150,10 @@ export default function Home() {
           </div>
           <div className="space-y-6">
             {[
-              { q: "How do I deposit money?", a: "Go to your Wallet dashboard, click 'Fund Wallet', and securely pay in Naira (₦) using your card, bank transfer, or USSD." },
-              { q: "How does the AI verify my task proof?", a: "When you upload proof (a written explanation, a link, or a screenshot image), our advanced AI scans it. The AI grades the complexity and verification details to calculate your leaderboard score." },
-              { q: "What happens if a room expires?", a: "If the room duration ends, the pooled commitment fees are awarded directly to the top performers on the leaderboard based on their AI score ranking." },
-              { q: "How do I withdraw my winnings?", a: "You can request a withdrawal directly from your wallet dashboard to any Nigerian bank account. Withdrawal requests are processed immediately." }
+              { q: "How do I earn coins?", a: "You receive 100 default coins when you sign up. To earn more, you must win challenge rooms by being the first to complete 100% of your tasks." },
+              { q: "Can others see my tasks?", a: "Tasks are private until you mark them as complete and upload proof. Once proof is uploaded, the task and proof become visible to everyone in the room." },
+              { q: "What happens if a room expires?", a: "If the duration expires and no one has reached 100%, the person with the highest completion percentage wins the reward pool." },
+              { q: "What kind of proof can I upload?", a: "You can upload images, videos, documents, or simply provide a text link depending on the nature of your task." }
             ].map((faq, i) => (
               <motion.div
                 key={i}
