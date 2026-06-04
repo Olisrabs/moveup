@@ -1,24 +1,24 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { PlusCircle, KeyRound, UploadCloud, Trophy, HandCoins } from "lucide-react";
+import { PlusCircle, KeyRound, UploadCloud, Trophy, Wallet } from "lucide-react";
 
 export default function HowItWorks() {
   const steps = [
     {
-      icon: <HandCoins className="w-8 h-8 text-indigo-400" />,
-      title: "1. Get Your Coins",
-      desc: "Sign up and instantly receive 100 default coins to start your journey."
+      icon: <Wallet className="w-8 h-8 text-indigo-400" />,
+      title: "1. Create Your Account & Fund Your Wallet",
+      desc: "Sign up for free and fund your MoveUp wallet. Your balance is used to pay the commitment fee when you join a challenge room."
     },
     {
       icon: <PlusCircle className="w-8 h-8 text-blue-400" />,
       title: "2. Create or Join a Room",
-      desc: "Create a private room with a set duration and commitment fee, or join an existing one using a unique code."
+      desc: "Create a private room with a set duration and commitment fee amount, or join an existing one using a unique invite code. A commitment fee is charged to all participants upon joining."
     },
     {
       icon: <KeyRound className="w-8 h-8 text-purple-400" />,
       title: "3. Set Your Tasks",
-      desc: "Once inside, create your private task list. These remain hidden from others until you complete them."
+      desc: "Once inside, create your private task list. These remain hidden from others until you complete them, keeping the competition fair."
     },
     {
       icon: <UploadCloud className="w-8 h-8 text-emerald-400" />,
@@ -28,7 +28,7 @@ export default function HowItWorks() {
     {
       icon: <Trophy className="w-8 h-8 text-amber-400" />,
       title: "5. Win the Pool",
-      desc: "The first person to hit 100% completion takes the entire pooled commitment fee from the room."
+      desc: "The first person to hit 100% completion wins the entire pooled commitment fees from all room participants. Your winnings go straight to your wallet."
     }
   ];
 
