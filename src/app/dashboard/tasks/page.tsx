@@ -4,10 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
-  Upload, Link as LinkIcon, FileText, ImageIcon, Shield,
+  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Task, type Room } from "@/lib/supabase";
+
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -31,6 +32,11 @@ export default function TasksPage() {
   const [submittingProof, setSubmittingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Score reveal
+  const [aiScoring, setAiScoring] = useState(false);
+  const [scoreResult, setScoreResult] = useState<{ score: number; reasoning: string; taskTitle: string } | null>(null);
+
 
   const fetchData = async () => {
     if (!user) return;
@@ -133,8 +139,48 @@ export default function TasksPage() {
     }
 
     setTasks((prev) => prev.map((t) => t.id === proofTask.id ? { ...t, status: "completed" } : t));
+    const completedTask = proofTask;
+    const completedProofType = proofType;
+    const completedProofText = proofText;
+    const completedProofLink = proofLink;
     setProofTask(null); setSubmittingProof(false);
+
+    // --- AI Scoring ---
+    setAiScoring(true);
+    try {
+      const res = await fetch("/api/score-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: completedTask.id,
+          user_id: user.id,
+          room_id: completedTask.room_id,
+          task_title: completedTask.title,
+          task_description: completedTask.description,
+          proof_type: completedProofType,
+          proof_text: completedProofType === "text" ? completedProofText : undefined,
+          proof_url: completedProofType === "text" ? undefined : (completedProofType === "link" ? completedProofLink : contentUrl || undefined),
+        }),
+      });
+      if (res.ok) {
+        const { score, reasoning } = await res.json();
+        // Update local state so the score badge shows on the card immediately
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === completedTask.id
+              ? { ...t, score_percentage: score, score_breakdown: reasoning }
+              : t
+          )
+        );
+        setScoreResult({ score, reasoning, taskTitle: completedTask.title });
+      }
+    } catch (e) {
+      console.error("AI scoring request failed:", e);
+    } finally {
+      setAiScoring(false);
+    }
   };
+
 
   const pending = tasks.filter((t) => t.status === "pending");
   const completed = tasks.filter((t) => t.status === "completed");
@@ -143,10 +189,11 @@ export default function TasksPage() {
   const TaskCard = ({ task }: { task: Task }) => {
     const room = rooms.find((r) => r.id === task.room_id);
     const isDone = task.status === "completed";
+    const hasScore = isDone && task.score_percentage != null;
     return (
       <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className={`glass-card rounded-2xl p-5 flex items-start gap-4 group transition-all ${isDone ? "opacity-60" : ""}`}>
+        className={`glass-card rounded-2xl p-5 flex items-start gap-4 group transition-all ${isDone ? "opacity-75" : ""}`}>
         <button onClick={() => !isDone && openProofModal(task)}
           title={isDone ? "Completed" : "Submit proof to complete"}
           className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${isDone ? "bg-accent border-accent cursor-default" : "border-border hover:border-primary cursor-pointer"}`}>
@@ -162,7 +209,15 @@ export default function TasksPage() {
                 <Clock size={11} />{new Date(task.due_date).toLocaleDateString()}
               </span>
             )}
+            {hasScore && (
+              <span className="text-xs bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                <Sparkles size={10} /> {task.score_percentage?.toFixed(1)}% AI Score
+              </span>
+            )}
           </div>
+          {hasScore && task.score_breakdown && (
+            <p className="text-xs text-muted-foreground mt-1.5 italic line-clamp-2">{task.score_breakdown}</p>
+          )}
         </div>
         {!isDone && (
           <button onClick={() => openProofModal(task)} title="Submit proof"
@@ -173,6 +228,7 @@ export default function TasksPage() {
       </motion.div>
     );
   };
+
 
   const proofTypeOptions = [
     { id: "text", label: "Text", icon: FileText },
@@ -368,6 +424,126 @@ export default function TasksPage() {
                     {submittingProof ? <Loader2 size={18} className="animate-spin" /> : <><Check size={16} /> Mark as Complete</>}
                   </button>
                 </form>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* AI Scoring Overlay — shown while Gemini is processing */}
+      <AnimatePresence>
+        {aiScoring && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="bg-card border border-border rounded-3xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-xs w-full mx-4"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center shadow-lg shadow-primary/30">
+                <Sparkles size={28} className="text-white animate-pulse" />
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-base">AI is scoring your task…</p>
+                <p className="text-sm text-muted-foreground mt-1">Analysing complexity & proof quality</p>
+              </div>
+              <div className="flex gap-1.5">
+                {[0, 1, 2].map((i) => (
+                  <motion.div
+                    key={i}
+                    className="w-2 h-2 rounded-full bg-primary"
+                    animate={{ scale: [1, 1.5, 1], opacity: [0.4, 1, 0.4] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Score Reveal Modal — shown after Gemini returns */}
+      <AnimatePresence>
+        {scoreResult && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setScoreResult(null)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", bounce: 0.35 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-sm shadow-2xl text-center">
+                {/* Animated score ring */}
+                <div className="relative w-28 h-28 mx-auto mb-5">
+                  <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
+                    <motion.circle
+                      cx="50" cy="50" r="42" fill="none"
+                      stroke="url(#scoreGrad)" strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 42}`}
+                      initial={{ strokeDashoffset: 2 * Math.PI * 42 }}
+                      animate={{ strokeDashoffset: 2 * Math.PI * 42 * (1 - scoreResult.score / 100) }}
+                      transition={{ duration: 1.2, ease: "easeOut" }}
+                    />
+                    <defs>
+                      <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#a855f7" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <Sparkles size={14} className="text-primary mb-0.5" />
+                    <motion.p
+                      className="text-2xl font-extrabold leading-none"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.5 }}
+                    >
+                      {scoreResult.score.toFixed(0)}%
+                    </motion.p>
+                  </div>
+                </div>
+
+                <h3 className="font-bold text-lg mb-1">AI Score Awarded!</h3>
+                <p className="text-xs text-muted-foreground mb-3 truncate">For: &quot;{scoreResult.taskTitle}&quot;</p>
+
+                <div className="bg-secondary/40 rounded-2xl px-4 py-3 text-left mb-5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">AI Reasoning</p>
+                  <p className="text-sm leading-relaxed">{scoreResult.reasoning}</p>
+                </div>
+
+                {/* Score tier label */}
+                <div className={`text-xs font-semibold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 mb-5 ${
+                  scoreResult.score >= 70 ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20" :
+                  scoreResult.score >= 35 ? "bg-primary/15 text-primary border border-primary/20" :
+                  "bg-secondary text-muted-foreground border border-border"
+                }`}>
+                  {scoreResult.score >= 70 ? "⚡ High Complexity" :
+                   scoreResult.score >= 35 ? "💪 Moderate Effort" :
+                   "📝 Simple Task"}
+                </div>
+
+                <p className="text-xs text-muted-foreground mb-4">This score has been added to your room leaderboard. Complete more complex tasks to climb higher!</p>
+
+                <button
+                  onClick={() => setScoreResult(null)}
+                  className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-all"
+                >
+                  Awesome, keep going! 🚀
+                </button>
               </div>
             </motion.div>
           </>

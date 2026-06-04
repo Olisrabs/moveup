@@ -13,20 +13,20 @@ export default function TermsPage() {
       content: "You must create an account to access most features of MoveUp. You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account.",
     },
     {
-      title: "3. Accountability Rooms and Coins",
-      content: "MoveUp provides a gamified accountability system. Coins are a virtual currency used within the platform and have no real-world monetary value. Participation in rooms involves 'committing' coins which may be lost if tasks are not completed according to the room rules.",
+      title: "3. Wallets, Fees, and Challenge Pools",
+      content: "MoveUp operates a real-money wallet system in Nigerian Naira (₦). Deposited funds are used to pay room commitment entry fees, which are pooled together. These pooled fees are awarded to the winners or top performers based on the room's AI-scored completion leaderboard. All withdrawals are processed immediately to your linked local bank account.",
     },
     {
-      title: "4. User Conduct",
-      content: "You agree not to use the platform for any unlawful purpose or to engage in any activity that interferes with or disrupts the service. Harassment, fraud, and the submission of false proof of work are strictly prohibited.",
+      title: "4. User Conduct and AI Integrity",
+      content: "You agree to use the platform only for lawful accountability challenges. Submitting forged proofs, plagiarized screenshots, deceptive links, or trying to manipulate the automated AI grading engine is strictly prohibited and constitutes a material breach of these terms.",
     },
     {
-      title: "5. Termination",
-      content: "We reserve the right to suspend or terminate your account at our sole discretion, without notice, for conduct that we believe violates these Terms or is harmful to other users of the platform.",
+      title: "5. Termination and Forfeiture",
+      content: "We reserve the right to suspend or terminate your account and forfeit any remaining wallet balances, without notice, for fraudulent behavior, proof forgery, or conduct that violates these Terms.",
     },
     {
       title: "6. Limitation of Liability",
-      content: "MoveUp is provided 'as is' without warranties of any kind. We shall not be liable for any indirect, incidental, or consequential damages arising out of your use of the platform.",
+      content: "MoveUp is provided 'as is' without warranties of any kind. We are not liable for any indirect, incidental, or consequential losses, including lost commitment fees, resulting from platform downtime or AI scoring evaluations.",
     },
   ];
 
@@ -39,7 +39,7 @@ export default function TermsPage() {
           className="mb-12 text-center"
         >
           <h1 className="text-4xl font-bold mb-4">Terms of Service</h1>
-          <p className="text-muted-foreground">Last updated: May 14, 2026</p>
+          <p className="text-muted-foreground">Last updated: June 4, 2026</p>
         </motion.div>
 
         <div className="glass-card p-8 md:p-12 rounded-3xl space-y-8">

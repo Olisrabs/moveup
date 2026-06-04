@@ -22,7 +22,7 @@ export default function AboutUs() {
             transition={{ delay: 0.1 }}
             className="text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto"
           >
-            We believe that true productivity requires stakes. MoveUp was built to bring accountability back to goal setting through gamification and social contracts.
+            We believe that true productivity requires stakes. MoveUp was built to bring accountability back to goal setting through gamification, social contracts, and unbiased AI grading.
           </motion.p>
         </div>
 
@@ -39,7 +39,7 @@ export default function AboutUs() {
             </div>
             <h2 className="text-2xl font-bold mb-4">Our Mission</h2>
             <p className="text-muted-foreground leading-relaxed">
-              To eliminate procrastination by providing a platform where commitments carry weight. By staking coins on your goals, you're financially and socially incentivized to follow through.
+              To eliminate procrastination by providing a platform where commitments carry weight. By staking real Naira (₦) commitment fees on your goals, you're financially and socially incentivized to follow through.
             </p>
           </motion.div>
 
@@ -54,7 +54,7 @@ export default function AboutUs() {
             </div>
             <h2 className="text-2xl font-bold mb-4">The Community</h2>
             <p className="text-muted-foreground leading-relaxed">
-              We thrive on friendly competition. MoveUp isn't just a todo list; it's a shared environment where you and your peers hold each other to the highest standards.
+              We thrive on friendly competition. MoveUp isn't just a todo list; it's a shared environment where you and your peers hold each other to the highest standards, with our AI ensuring score fairness.
             </p>
           </motion.div>
         </div>
@@ -71,7 +71,7 @@ export default function AboutUs() {
           </div>
           <h2 className="text-3xl font-bold mb-6">Built with intention.</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            MoveUp started as an experiment between a few friends who were tired of breaking promises to themselves. We realized that putting a small stake on the line drastically increased our completion rate. Today, we're bringing that same powerful mechanic to everyone.
+            MoveUp started as an experiment between friends who were tired of breaking promises. We realized that putting a small financial stake on the line drastically increased completion rates. By combining real-money wallets with our advanced AI multimodal verification, we've built a secure, cheat-proof ecosystem to help you level up your life.
           </p>
         </motion.div>
       </div>

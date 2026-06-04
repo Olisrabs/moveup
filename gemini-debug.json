@@ -1,0 +1,46 @@
+{
+  "request_body": {
+    "task_id": "46ad128a-2940-4fb7-88d3-6179f7879f3c",
+    "user_id": "b2b8885d-a794-4a06-9524-4bf52b5bbc92",
+    "room_id": "e5b0747b-e50e-4750-bfce-21b55d17663b",
+    "task_title": "Create and deploy medbit",
+    "task_description": null,
+    "proof_type": "link",
+    "proof_url": "https://medbit.com.ng/"
+  },
+  "gemini_api_response": {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "text": "{\n  \"score\": 92,\n  \"reasoning\": \"The task 'Create and deploy medbit' is a highly complex undertaking, involving significant development and deployment effort. The provided proof, a live and professional digital health platform at medbit.com.ng, clearly demonstrates the successful completion of this substantial task with high quality and detail.\"\n}"
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 371,
+      "candidatesTokenCount": 75,
+      "totalTokenCount": 1414,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 371
+        }
+      ],
+      "thoughtsTokenCount": 968,
+      "serviceTier": "standard"
+    },
+    "modelVersion": "gemini-2.5-flash",
+    "responseId": "1bogatnbPOSVkdUP8KiEwA0"
+  },
+  "raw_text_extracted": "{\n  \"score\": 92,\n  \"reasoning\": \"The task 'Create and deploy medbit' is a highly complex undertaking, involving significant development and deployment effort. The provided proof, a live and professional digital health platform at medbit.com.ng, clearly demonstrates the successful completion of this substantial task with high quality and detail.\"\n}",
+  "parse_status": "success",
+  "parsed_score": 92,
+  "parsed_reasoning": "The task 'Create and deploy medbit' is a highly complex undertaking, involving significant development and deployment effort. The provided proof, a live and professional digital health platform at medbit.com.ng, clearly demonstrates the successful completion of this substantial task with high quality and detail."
+}

@@ -6,7 +6,8 @@ import {
   DoorOpen, Plus, Users, Clock, Copy, Check, X,
   Loader2, Hash, Trophy, Medal, Star, ChevronRight, BarChart3,
   ArrowLeft, CheckCircle2, Clock3, Link as LinkIcon, FileText, ImageIcon,
-  Trash2, Gift, AlertCircle, Wallet,
+  Trash2, Gift, AlertCircle, Wallet, RotateCcw,
+
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Room, type TaskWithProof, formatNaira } from "@/lib/supabase";
@@ -17,8 +18,10 @@ type LeaderboardEntry = {
   display_name: string;
   total_tasks: number;
   completed_tasks: number;
-  percentage: number;
+  completion_pct: number;  // simple completion rate
+  ai_score: number;        // cumulative AI score (can exceed 100)
 };
+
 
 export default function RoomsPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -82,7 +85,7 @@ export default function RoomsPage() {
 
     const { data: members } = await supabase
       .from("room_members")
-      .select("user_id, room_display_name, users(display_name)")
+      .select("user_id, room_display_name, ai_score, users(display_name)")
       .eq("room_id", room.id);
 
     if (!members || members.length === 0) { setLoadingBoard(false); return; }
@@ -102,15 +105,18 @@ export default function RoomsPage() {
           display_name: userData?.display_name || m.room_display_name || "Unknown",
           total_tasks: total,
           completed_tasks: done,
-          percentage: total > 0 ? Math.round((done / total) * 100) : 0,
+          completion_pct: total > 0 ? Math.round((done / total) * 100) : 0,
+          ai_score: Number(m.ai_score ?? 0),
         };
       })
     );
 
-    entries.sort((a, b) => b.percentage - a.percentage || b.completed_tasks - a.completed_tasks);
+    // Rank by AI score (highest first). Tie-break by completed tasks.
+    entries.sort((a, b) => b.ai_score - a.ai_score || b.completed_tasks - a.completed_tasks);
     setLeaderboard(entries);
     setLoadingBoard(false);
   };
+
 
   const fetchMemberTasks = async (entry: LeaderboardEntry) => {
     if (!selectedRoom) return;
@@ -214,8 +220,8 @@ export default function RoomsPage() {
   const distributePrizes = async () => {
     if (!selectedRoom || !user) return;
     setDistributing(true); setDistributeError(null);
-    // Re-fetch leaderboard
-    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, users(display_name)").eq("room_id", selectedRoom.id);
+    // Re-fetch members with ai_score
+    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, ai_score, users(display_name)").eq("room_id", selectedRoom.id);
     if (!members || members.length === 0) { setDistributeError("No members found."); setDistributing(false); return; }
     const entries = await Promise.all(members.map(async (m) => {
       const [{ count: total }, { count: done }] = await Promise.all([
@@ -224,9 +230,17 @@ export default function RoomsPage() {
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ud = m.users as any;
-      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total: total ?? 0, done: done ?? 0, pct: (total ?? 0) > 0 ? (done ?? 0) / (total ?? 0) : 0 };
+      return {
+        user_id: m.user_id,
+        display_name: ud?.display_name || m.room_display_name || "Unknown",
+        total: total ?? 0,
+        done: done ?? 0,
+        ai_score: Number(m.ai_score ?? 0),
+      };
     }));
-    entries.sort((a, b) => b.pct - a.pct || b.done - a.done);
+    // Sort by AI score (winner = highest total AI score in this room)
+    entries.sort((a, b) => b.ai_score - a.ai_score || b.done - a.done);
+
     const totalPool = Number(selectedRoom.commitment_fee) * selectedRoom.member_count;
     const prizeTypes: Array<'prize_1st' | 'prize_2nd' | 'prize_3rd'> = ['prize_1st', 'prize_2nd', 'prize_3rd'];
     const prizeLabels = ['1st place', '2nd place', '3rd place'];
@@ -419,6 +433,16 @@ export default function RoomsPage() {
                     </>
                   )}
                 </div>
+                {/* Refresh leaderboard scores */}
+                {drawerView === 'leaderboard' && selectedRoom && (
+                  <button
+                    onClick={() => fetchLeaderboard(selectedRoom)}
+                    title="Refresh scores"
+                    className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                )}
                 <button onClick={() => { setSelectedRoom(null); backToLeaderboard(); }}
                   className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors shrink-0">
                   <X size={18} />
@@ -439,6 +463,8 @@ export default function RoomsPage() {
                     ) : (
                       leaderboard.map((entry, i) => {
                         const isMe = entry.user_id === user?.id;
+                        const topScore = leaderboard[0]?.ai_score || 1;
+                        const barWidth = Math.min(100, (entry.ai_score / topScore) * 100);
                         return (
                           <motion.button key={entry.user_id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: i * 0.05 }}
@@ -452,17 +478,17 @@ export default function RoomsPage() {
                                 <p className="text-sm font-semibold truncate">
                                   {entry.display_name}{isMe && <span className="text-xs text-primary font-normal ml-1">(you)</span>}
                                 </p>
-                                <p className="text-xs text-muted-foreground">{entry.completed_tasks}/{entry.total_tasks} tasks</p>
+                                <p className="text-xs text-muted-foreground">{entry.completed_tasks}/{entry.total_tasks} tasks · {entry.completion_pct}% done</p>
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-sm font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-foreground'}`}>
-                                  {entry.percentage}%
-                                </span>
-                                <ChevronRight size={14} className="text-muted-foreground" />
+                              <div className="text-right shrink-0">
+                                <p className={`text-sm font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-foreground'}`}>
+                                  {entry.ai_score.toFixed(1)}%
+                                </p>
+                                <p className="text-xs text-muted-foreground">AI score</p>
                               </div>
                             </div>
                             <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                              <motion.div initial={{ width: 0 }} animate={{ width: `${entry.percentage}%` }}
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${barWidth}%` }}
                                 transition={{ delay: i * 0.05 + 0.2, duration: 0.6, ease: 'easeOut' }}
                                 className={`h-full rounded-full ${i === 0 ? 'bg-yellow-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-600' : 'bg-primary'}`} />
                             </div>
@@ -470,6 +496,7 @@ export default function RoomsPage() {
                         );
                       })
                     )}
+
                     <p className="text-xs text-muted-foreground text-center pt-2">Tap a member to view their tasks &amp; proof</p>
 
                     {/* Pool summary */}

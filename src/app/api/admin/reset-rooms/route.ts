@@ -16,29 +16,34 @@ export async function POST(req: NextRequest) {
 
     const { createClient } = await import("@supabase/supabase-js");
 
-    // 1. Verify User Authentication
+    // 1. Verify User Authentication (Local JWT decode to bypass network calls)
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return NextResponse.json({ error: "Unauthorized: Missing auth header" }, { status: 401 });
     }
 
     const token = authHeader.replace("Bearer ", "");
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized user" }, { status: 401 });
+    let userId: string;
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) {
+        return NextResponse.json({ error: "Invalid token format" }, { status: 401 });
+      }
+      const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+      userId = payload.sub;
+      if (!userId) {
+        return NextResponse.json({ error: "Invalid token claims" }, { status: 401 });
+      }
+    } catch (err) {
+      return NextResponse.json({ error: "Failed to parse authentication token" }, { status: 401 });
     }
 
-    // 2. Verify Admin Status
+    // 2. Verify Admin Status (Db check only)
     const adminDb = createClient(supabaseUrl, supabaseServiceKey);
     const { data: userProfile, error: profileErr } = await adminDb
       .from("users")
       .select("is_admin")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     if (profileErr || !userProfile || !userProfile.is_admin) {
@@ -135,7 +140,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Delete all rows in room_members to checkout everyone
+    // 6. Delete all proofs to clean up storage associations
+    const { error: deleteProofsErr } = await adminDb
+      .from("proofs")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+
+    if (deleteProofsErr) {
+      console.error("Failed to delete proofs during reset:", deleteProofsErr);
+    }
+
+    // 7. Delete all tasks to reset counts to 0
+    const { error: deleteTasksErr } = await adminDb
+      .from("tasks")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+
+    if (deleteTasksErr) {
+      console.error("Failed to delete tasks during reset:", deleteTasksErr);
+    }
+
+    // 8. Delete all rows in room_members to checkout everyone
     const { error: deleteErr } = await adminDb
       .from("room_members")
       .delete()
