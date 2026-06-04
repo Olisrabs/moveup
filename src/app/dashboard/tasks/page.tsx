@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
-  Upload, Link as LinkIcon, FileText, ImageIcon, Shield,
+  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Task, type Room } from "@/lib/supabase";
@@ -20,6 +20,12 @@ export default function TasksPage() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", description: "", room_id: "", due_date: "" });
+
+  // Edit task
+  const [editTask, setEditTask] = useState<Task | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", description: "", due_date: "" });
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Proof modal
   const [proofTask, setProofTask] = useState<Task | null>(null);
@@ -51,6 +57,36 @@ export default function TasksPage() {
   };
 
   useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [user]);
+
+  const openEditModal = (task: Task) => {
+    setEditTask(task);
+    setEditForm({
+      title: task.title,
+      description: task.description ?? "",
+      due_date: task.due_date ? task.due_date.split("T")[0] : "",
+    });
+    setEditError(null);
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTask) return;
+    setEditing(true); setEditError(null);
+    const { error } = await supabase.from("tasks").update({
+      title: editForm.title,
+      description: editForm.description || null,
+      due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : null,
+    }).eq("id", editTask.id);
+    if (error) { setEditError(error.message); setEditing(false); return; }
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === editTask.id
+          ? { ...t, title: editForm.title, description: editForm.description || null, due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : null }
+          : t
+      )
+    );
+    setEditTask(null); setEditing(false);
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,10 +201,16 @@ export default function TasksPage() {
           </div>
         </div>
         {!isDone && (
-          <button onClick={() => openProofModal(task)} title="Submit proof"
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10">
-            <Upload size={15} />
-          </button>
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => openEditModal(task)} title="Edit task"
+              className="p-2 rounded-lg text-muted-foreground hover:text-blue-400 hover:bg-blue-400/10 transition-all">
+              <Pencil size={14} />
+            </button>
+            <button onClick={() => openProofModal(task)} title="Submit proof"
+              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
+              <Upload size={15} />
+            </button>
+          </div>
         )}
       </motion.div>
     );
@@ -278,6 +320,52 @@ export default function TasksPage() {
                   <button type="submit" disabled={adding}
                     className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl font-semibold hover:bg-primary/90 transition-all disabled:opacity-70">
                     {adding ? <Loader2 size={18} className="animate-spin" /> : <><Plus size={16} /> Add Task</>}
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Task Modal */}
+      <AnimatePresence>
+        {editTask && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => !editing && setEditTask(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-md shadow-2xl">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <Pencil size={15} className="text-blue-400" />
+                    </div>
+                    <h3 className="text-lg font-bold">Edit Task</h3>
+                  </div>
+                  <button onClick={() => !editing && setEditTask(null)} className="p-2 rounded-lg text-muted-foreground hover:text-foreground"><X size={18} /></button>
+                </div>
+                <form onSubmit={handleEdit} className="space-y-4">
+                  {editError && <p className="text-red-500 text-sm bg-red-500/10 px-4 py-2.5 rounded-xl">{editError}</p>}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Task Title *</label>
+                    <input required className={inputClass} placeholder="What do you need to do?"
+                      value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Description</label>
+                    <textarea className={`${inputClass} resize-none`} rows={2} placeholder="Optional details"
+                      value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Due Date</label>
+                    <input type="date" className={inputClass} min={today}
+                      value={editForm.due_date} onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })} />
+                  </div>
+                  <button type="submit" disabled={editing}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-500 text-white py-3 rounded-xl font-semibold hover:bg-blue-500/90 transition-all disabled:opacity-70">
+                    {editing ? <Loader2 size={18} className="animate-spin" /> : <><Pencil size={15} /> Save Changes</>}
                   </button>
                 </form>
               </div>
