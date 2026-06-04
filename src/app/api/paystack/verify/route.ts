@@ -48,8 +48,9 @@ export async function POST(req: NextRequest) {
     // Paystack returns amount in kobo — convert to Naira
     const paidAmountNaira = paystackData.data.amount / 100;
 
-    // Guard: paid amount must match expected (allow small rounding diff)
-    if (Math.abs(paidAmountNaira - expectedAmount) > 1) {
+    // Guard: paid amount must match expected (allow small rounding diff).
+    // Only enforced when expectedAmount is explicitly provided and > 0.
+    if (expectedAmount && expectedAmount > 0 && Math.abs(paidAmountNaira - expectedAmount) > 1) {
       return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
     }
 
@@ -64,7 +65,29 @@ export async function POST(req: NextRequest) {
     const { createClient } = await import("@supabase/supabase-js");
     const adminDb = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get current balance
+    // ── Idempotency check ──────────────────────────────────────────────────────
+    // If this Paystack reference was already processed, return success without
+    // crediting again. This prevents double-crediting on page refresh or
+    // duplicate Paystack callbacks.
+    const { data: existingTx } = await adminDb
+      .from("wallet_transactions")
+      .select("id")
+      .ilike("description", `%ref: ${reference}%`)
+      .maybeSingle();
+
+    if (existingTx) {
+      // Already processed — return success but don't credit again
+      const { data: userRowFresh } = await adminDb
+        .from("users").select("balance").eq("id", userId).single();
+      return NextResponse.json({
+        success: true,
+        newBalance: Number(userRowFresh?.balance ?? 0),
+        amountCredited: 0,
+        alreadyProcessed: true,
+      });
+    }
+
+    // ── Fetch current balance ──────────────────────────────────────────────────
     const { data: userRow, error: fetchErr } = await adminDb
       .from("users")
       .select("balance")
@@ -72,36 +95,43 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (fetchErr || !userRow) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: "User not found — userId may not match any users table row" }, { status: 404 });
     }
 
     // Calculate Fees
     const { paystackFee, moveupFee, netAmount } = calculateFees(paidAmountNaira);
-
     const newBalance = Number(userRow.balance) + netAmount;
 
-    // Update balance with net amount
+    // ── Update balance ─────────────────────────────────────────────────────────
     const { error: updateErr } = await adminDb
       .from("users")
       .update({ balance: newBalance })
       .eq("id", userId);
 
     if (updateErr) {
-      return NextResponse.json({ error: "Failed to credit wallet" }, { status: 500 });
+      return NextResponse.json({ error: `Failed to credit wallet: ${updateErr.message}` }, { status: 500 });
     }
 
-    // Record transaction
-    await adminDb.from("wallet_transactions").insert({
+    // ── Record transaction (surfaced error) ────────────────────────────────────
+    const txDescription = `Wallet funded: ₦${netAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })} (Paid ₦${paidAmountNaira.toLocaleString("en-NG")} minus ₦${paystackFee} Paystack fee & ₦${moveupFee} MoveUp fee) — ref: ${reference}`;
+    const { error: txErr } = await adminDb.from("wallet_transactions").insert({
       user_id: userId,
       amount: netAmount,
       type: "fund",
-      description: `Wallet funded: ₦${netAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })} (Paid ₦${paidAmountNaira.toLocaleString("en-NG")} minus ₦${paystackFee} Paystack fee & ₦${moveupFee} MoveUp fee) — ref: ${reference}`,
+      description: txDescription,
     });
 
-    // Send notification
+    if (txErr) {
+      // Balance was credited but transaction log failed — log it so it can be
+      // manually reconciled. Do NOT return an error to the client since the
+      // user's money has already been credited correctly.
+      console.error(`[verify] wallet_transactions insert failed for ref ${reference}:`, txErr.message);
+    }
+
+    // ── Send in-app notification ───────────────────────────────────────────────
     await adminDb.from("notifications").insert({
       user_id: userId,
-      message: `💰 Wallet Credited: ₦${netAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}. (Deposit amount: ₦${paidAmountNaira.toLocaleString("en-NG")}, Paystack Fee: ₦${paystackFee}, MoveUp Fee: ₦${moveupFee}). New balance: ₦${newBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}.`,
+      message: `💰 Wallet Credited: ₦${netAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}. (Deposit: ₦${paidAmountNaira.toLocaleString("en-NG")}, Paystack Fee: ₦${paystackFee}, MoveUp Fee: ₦${moveupFee}). New balance: ₦${newBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}.`,
       is_read: false,
       type: "wallet_fund",
     });

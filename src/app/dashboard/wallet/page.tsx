@@ -23,7 +23,7 @@ const typeConfig: Record<string, { label: string; icon: React.ElementType; color
 };
 
 export default function WalletPage() {
-  const { profile, user, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,44 +106,57 @@ export default function WalletPage() {
     initData();
   }, [initData]);
 
-  // Check for Paystack redirect callback on mount
+  // Check for Paystack redirect callback on mount.
+  // IMPORTANT: we wait until auth has finished loading before reading the URL.
+  // If we run while `user` is still null (auth not ready), the effect would bail
+  // and the reference param would be consumed/lost on the next render cycle.
   useEffect(() => {
-    if (typeof window === "undefined" || !user) return;
+    if (typeof window === "undefined") return;
+    // Auth context is still resolving — don't touch the URL yet
+    if (authLoading) return;
+    // User is not logged in
+    if (!user) return;
+
     const params = new URLSearchParams(window.location.search);
     const reference = params.get("reference");
+    // Paystack also returns `trxref` (alias). Accept both.
+    const trxref = params.get("trxref");
+    const finalRef = reference || trxref;
 
-    if (reference) {
-      setVerifyingPayment(true);
-      // Remove query parameters from URL so reloading doesn't re-run verification
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
+    if (!finalRef) return;
 
-      const verify = async () => {
-        try {
-          const res = await fetch("/api/paystack/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reference, userId: user.id }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            setVerificationStatus({ success: true, message: "Wallet funded successfully!" });
-            await refreshProfile();
-            await initData();
-          } else {
-            setVerificationStatus({ success: false, message: data.error || "Payment verification failed." });
-          }
-        } catch (err: any) {
-          setVerificationStatus({ success: false, message: err.message || "Failed to verify transaction." });
-        } finally {
-          setVerifyingPayment(false);
-          // Clear status after 4 seconds
-          setTimeout(() => setVerificationStatus(null), 4000);
+    // Remove query parameters from URL immediately so reloading doesn't re-run verification
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setVerifyingPayment(true);
+
+    const verify = async () => {
+      try {
+        const res = await fetch("/api/paystack/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // Pass expectedAmount as 0 — the verify route will use the actual
+          // paid amount from Paystack directly, skipping the mismatch guard
+          // when not explicitly provided.
+          body: JSON.stringify({ reference: finalRef, userId: user.id }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setVerificationStatus({ success: true, message: `Wallet funded successfully! ₦${data.amountCredited?.toLocaleString("en-NG", { minimumFractionDigits: 2 })} has been credited.` });
+          await refreshProfile();
+          await initData();
+        } else {
+          setVerificationStatus({ success: false, message: data.error || "Payment verification failed. Please contact support if money was deducted." });
         }
-      };
-      verify();
-    }
-  }, [user, refreshProfile, initData]);
+      } catch (err: any) {
+        setVerificationStatus({ success: false, message: err.message || "Failed to verify transaction. Please contact support." });
+      } finally {
+        setVerifyingPayment(false);
+        // Keep status visible for 10 seconds so users can read it
+        setTimeout(() => setVerificationStatus(null), 10000);
+      }
+    };
+    verify();
+  }, [authLoading, user, refreshProfile, initData]);
 
   // Fetch banks when withdraw modal opens
   useEffect(() => {
