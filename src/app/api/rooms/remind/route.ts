@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     const recipientCount = otherMembers?.length || 0;
     console.log(`[Remind API] Request by user ${user.id} inside room ${roomId}. Found ${recipientCount} other member(s) to notify.`);
 
-    if (recipientCount > 0) {
+    if (otherMembers && otherMembers.length > 0) {
       // 6. Insert in-app notifications
       console.log(`[Remind API] Creating in-app notifications for ${recipientCount} user(s)...`);
       const notificationsInsert = otherMembers.map((m: any) => ({
@@ -122,7 +122,8 @@ export async function POST(req: NextRequest) {
       if (smtpHost && smtpUser && smtpPass) {
         console.log(`[Remind API] SMTP is configured. Preparing to send email reminders...`);
         try {
-          const nodemailer = await import("nodemailer");
+          // @ts-ignore
+          const nodemailer = (await import("nodemailer")) as any;
           const transporter = nodemailer.default.createTransport({
             host: smtpHost,
             port: parseInt(process.env.SMTP_PORT || "587"),
@@ -164,7 +165,7 @@ export async function POST(req: NextRequest) {
 
             return transporter.sendMail(mailOptions).then(() => {
               console.log(`[Remind API] Email reminder successfully sent to ${email}`);
-            }).catch((err) => {
+            }).catch((err: any) => {
               console.error(`[Remind API] Failed to send reminder email to ${email}:`, err);
             });
           });
