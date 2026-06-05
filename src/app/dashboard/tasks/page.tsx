@@ -4,8 +4,20 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
-  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil,
+  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil, Lock,
 } from "lucide-react";
+
+/** Returns true if the task was created less than 30 minutes ago. */
+const isTaskEditable = (task: { created_at: string }): boolean => {
+  const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+  return Date.now() - new Date(task.created_at).getTime() < THIRTY_MINUTES_MS;
+};
+
+/** How many minutes remain in the edit window (clamped to 0). */
+const editMinutesLeft = (task: { created_at: string }): number => {
+  const elapsed = Date.now() - new Date(task.created_at).getTime();
+  return Math.max(0, Math.ceil((30 * 60 * 1000 - elapsed) / 60_000));
+};
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Task, type Room } from "@/lib/supabase";
 
@@ -26,6 +38,7 @@ export default function TasksPage() {
   const [editForm, setEditForm] = useState({ title: "", description: "", due_date: "" });
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editExpiredToast, setEditExpiredToast] = useState(false);
 
   // Proof modal
   const [proofTask, setProofTask] = useState<Task | null>(null);
@@ -58,7 +71,16 @@ export default function TasksPage() {
 
   useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [user]);
 
+  const showExpiredToast = () => {
+    setEditExpiredToast(true);
+    setTimeout(() => setEditExpiredToast(false), 3500);
+  };
+
   const openEditModal = (task: Task) => {
+    if (!isTaskEditable(task)) {
+      showExpiredToast();
+      return;
+    }
     setEditTask(task);
     setEditForm({
       title: task.title,
@@ -71,6 +93,13 @@ export default function TasksPage() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTask) return;
+    // Double-check the 30-minute window at submission time (guards against
+    // a tab being left open past the deadline).
+    if (!isTaskEditable(editTask)) {
+      setEditError("The 30-minute edit window for this task has expired.");
+      setEditing(false);
+      return;
+    }
     setEditing(true); setEditError(null);
     const { error } = await supabase.from("tasks").update({
       title: editForm.title,
@@ -179,6 +208,8 @@ export default function TasksPage() {
   const TaskCard = ({ task }: { task: Task }) => {
     const room = rooms.find((r) => r.id === task.room_id);
     const isDone = task.status === "completed";
+    const canEdit = !isDone && isTaskEditable(task);
+    const minsLeft = editMinutesLeft(task);
     return (
       <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
@@ -198,14 +229,33 @@ export default function TasksPage() {
                 <Clock size={11} />{new Date(task.due_date).toLocaleDateString()}
               </span>
             )}
+            {!isDone && !canEdit && (
+              <span className="text-xs text-muted-foreground/60 flex items-center gap-1" title="Edit window expired">
+                <Lock size={10} />Edit locked
+              </span>
+            )}
+            {!isDone && canEdit && minsLeft <= 10 && (
+              <span className="text-xs text-amber-500 flex items-center gap-1">
+                <Clock size={10} />{minsLeft}m left to edit
+              </span>
+            )}
           </div>
         </div>
         {!isDone && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => openEditModal(task)} title="Edit task"
-              className="p-2 rounded-lg text-muted-foreground hover:text-blue-400 hover:bg-blue-400/10 transition-all">
-              <Pencil size={14} />
-            </button>
+            {canEdit ? (
+              <button onClick={() => openEditModal(task)} title="Edit task (within 30 min of creation)"
+                className="p-2 rounded-lg text-muted-foreground hover:text-blue-400 hover:bg-blue-400/10 transition-all">
+                <Pencil size={14} />
+              </button>
+            ) : (
+              <button
+                onClick={showExpiredToast}
+                title="Edit window expired (tasks can only be edited within 30 minutes of creation)"
+                className="p-2 rounded-lg text-muted-foreground/40 cursor-not-allowed">
+                <Lock size={14} />
+              </button>
+            )}
             <button onClick={() => openProofModal(task)} title="Submit proof"
               className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
               <Upload size={15} />
@@ -224,6 +274,23 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-6">
+      {/* Expired-edit toast */}
+      <AnimatePresence>
+        {editExpiredToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-card border border-border px-5 py-3 rounded-2xl shadow-2xl text-sm"
+          >
+            <Lock size={15} className="text-amber-400 shrink-0" />
+            <span>
+              <span className="font-semibold text-amber-400">Edit locked.</span>{" "}
+              Tasks can only be edited within 30 minutes of creation.
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold">Tasks</h2>
