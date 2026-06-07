@@ -368,14 +368,14 @@ export default function WalletPage() {
         <div className="relative z-10">
           <p className="text-white/70 text-sm mb-2">Available Balance</p>
           <div className="flex items-end gap-3 mb-6">
-            <span className="text-5xl font-bold">{formatNaira(currentBalance)}</span>
+            <span className="text-4xl md:text-5xl font-bold truncate">{formatNaira(currentBalance)}</span>
           </div>
-          <div className="flex gap-6 mb-8">
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mb-8">
             <div>
               <p className="text-white/60 text-xs">Total Funded</p>
               <p className="text-xl font-semibold">+{loading ? "—" : formatNaira(totalIn)}</p>
             </div>
-            <div className="w-px bg-white/20" />
+            <div className="hidden sm:block w-px bg-white/20" />
             <div>
               <p className="text-white/60 text-xs">Total Spent/Withdrawn</p>
               <p className="text-xl font-semibold">-{loading ? "—" : formatNaira(totalOut)}</p>
@@ -384,11 +384,11 @@ export default function WalletPage() {
           {/* Action buttons */}
           <div className="flex gap-3 flex-wrap">
             <button onClick={() => { setShowFund(true); setFundSuccess(false); setFundError(null); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white text-primary rounded-xl text-sm font-bold hover:bg-white/90 transition-all shadow-lg">
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-white text-primary rounded-xl text-sm font-bold hover:bg-white/90 transition-all shadow-lg">
               <ArrowDownToLine size={16} /> Fund Wallet
             </button>
             <button onClick={() => { setShowWithdraw(true); setWithdrawSuccess(false); setWithdrawError(null); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white/10 border border-white/20 text-white rounded-xl text-sm font-semibold hover:bg-white/20 transition-all">
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-white/10 border border-white/20 text-white rounded-xl text-sm font-semibold hover:bg-white/20 transition-all">
               <ArrowUpFromLine size={16} /> Withdraw
             </button>
           </div>
@@ -398,7 +398,7 @@ export default function WalletPage() {
       {/* Two columns: Transactions & Withdrawal Requests */}
       <div className="grid md:grid-cols-2 gap-6">
         {/* Transaction History */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <h3 className="font-semibold flex items-center gap-2">
             <Wallet size={16} className="text-primary" /> Wallet History
           </h3>
@@ -434,7 +434,7 @@ export default function WalletPage() {
         </div>
 
         {/* Withdrawal Tracking */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <h3 className="font-semibold flex items-center gap-2">
             <Clock size={16} className="text-primary" /> Withdrawal Requests
           </h3>
@@ -448,13 +448,13 @@ export default function WalletPage() {
           ) : (
             <div className="glass-card rounded-2xl overflow-hidden divide-y divide-border">
               {withdrawalRequests.map((req) => (
-                <div key={req.id} className="flex items-center justify-between p-4 text-sm">
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 text-sm">
                   <div className="space-y-1">
                     <p className="font-bold">{formatNaira(Number(req.amount))}</p>
-                    <p className="text-xs text-muted-foreground">{req.bank_name} · {req.account_number}</p>
+                    <p className="text-xs text-muted-foreground break-words">{req.bank_name} · {req.account_number}</p>
                     <p className="text-[10px] text-muted-foreground/70">{new Date(req.created_at).toLocaleString()}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     {req.status === "pending" && (
                       <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 bg-amber-500/10 text-amber-500 rounded-full">
                         <Clock size={12} /> Pending Review
@@ -506,7 +506,7 @@ export default function WalletPage() {
                     <p className="text-xs">Bank: <strong>{req.bank_name}</strong> · Account: <strong>{req.account_number}</strong></p>
                     <p className="text-xs">Beneficiary: <strong>{req.account_name}</strong></p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleAdminProcess(req.id, "complete")}
                       disabled={adminProcessingId === req.id}
@@ -573,8 +573,8 @@ export default function WalletPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => !fundLoading && setShowFund(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-md shadow-2xl">
+              exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-md shadow-2xl my-auto">
                 <div className="flex items-center justify-between mb-6">
                   <div>
                     <h3 className="text-lg font-bold">Fund Wallet</h3>
@@ -726,9 +726,9 @@ export default function WalletPage() {
                   {parseFloat(withdrawAmount) >= 500 && withdrawBank && withdrawAccount.length === 10 && withdrawName && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       className="bg-secondary/40 rounded-xl p-4 space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Sending to</span>
-                        <span className="font-semibold text-right max-w-[180px] truncate">{withdrawName} · {withdrawBank}</span>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground whitespace-nowrap">Sending to</span>
+                        <span className="font-semibold text-right break-words">{withdrawName} · {withdrawBank}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Account</span>
