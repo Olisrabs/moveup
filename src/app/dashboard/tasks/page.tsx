@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
-  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil, Lock,
+  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil, Lock, Repeat, RefreshCw,
 } from "lucide-react";
 
 /** Returns true if the task was created less than 30 minutes ago. */
@@ -31,7 +31,7 @@ export default function TasksPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", description: "", room_id: "", due_date: "" });
+  const [form, setForm] = useState({ title: "", description: "", room_id: "", due_date: "", is_recurring: false });
 
   // Edit task
   const [editTask, setEditTask] = useState<Task | null>(null);
@@ -57,7 +57,20 @@ export default function TasksPage() {
       supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("room_members").select("room_id").eq("user_id", user.id),
     ]);
-    setTasks(taskData ?? []);
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const processedTasks = (taskData ?? []).map(t => {
+      if (t.is_recurring && t.status === "completed") {
+        const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
+        if (completedDate !== todayStr) {
+          supabase.from("tasks").update({ status: "pending" }).eq("id", t.id).then();
+          return { ...t, status: "pending" as const };
+        }
+      }
+      return t;
+    });
+
+    setTasks(processedTasks);
     const roomIds = (memberRooms ?? []).map((m) => m.room_id);
     if (roomIds.length > 0) {
       const { data: roomData } = await supabase
@@ -125,10 +138,11 @@ export default function TasksPage() {
       title: form.title, description: form.description || null,
       room_id: form.room_id, user_id: user.id,
       due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+      is_recurring: form.is_recurring,
     });
     if (error) { setAddError(error.message); setAdding(false); return; }
     setShowAdd(false);
-    setForm({ title: "", description: "", room_id: "", due_date: "" });
+    setForm({ title: "", description: "", room_id: "", due_date: "", is_recurring: false });
     fetchData(); setAdding(false);
   };
 
@@ -179,7 +193,11 @@ export default function TasksPage() {
     });
     if (proofErr) { setProofError(proofErr.message); setSubmittingProof(false); return; }
 
-    await supabase.from("tasks").update({ status: "completed" }).eq("id", proofTask.id);
+    const nowStr = new Date().toISOString();
+    await supabase.from("tasks").update({ 
+      status: "completed",
+      last_completed_at: nowStr
+    }).eq("id", proofTask.id);
 
     // Notify other room members
     const room = rooms.find((r) => r.id === proofTask.room_id);
@@ -197,8 +215,14 @@ export default function TasksPage() {
       );
     }
 
-    setTasks((prev) => prev.map((t) => t.id === proofTask.id ? { ...t, status: "completed" } : t));
+    setTasks((prev) => prev.map((t) => t.id === proofTask.id ? { ...t, status: "completed", last_completed_at: nowStr } : t));
     setProofTask(null); setSubmittingProof(false);
+  };
+
+  const toggleRecurring = async (task: Task) => {
+    const newStatus = !task.is_recurring;
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_recurring: newStatus } : t));
+    await supabase.from("tasks").update({ is_recurring: newStatus }).eq("id", task.id);
   };
 
   const pending = tasks.filter((t) => t.status === "pending");
@@ -239,11 +263,21 @@ export default function TasksPage() {
                 <Clock size={10} />{minsLeft}m left to edit
               </span>
             )}
+            {task.is_recurring && (
+              <span className="text-xs bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Repeat size={10} /> Recurring
+              </span>
+            )}
           </div>
         </div>
-        {!isDone && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {canEdit ? (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => toggleRecurring(task)} title={task.is_recurring ? "Remove recurring" : "Make recurring"}
+            className={`p-2 rounded-lg transition-all ${task.is_recurring ? "text-indigo-400 hover:bg-indigo-400/10" : "text-muted-foreground hover:text-indigo-400 hover:bg-indigo-400/10"}`}>
+            <RefreshCw size={14} />
+          </button>
+          {!isDone && (
+            <>
+              {canEdit ? (
               <button onClick={() => openEditModal(task)} title="Edit task (within 30 min of creation)"
                 className="p-2 rounded-lg text-muted-foreground hover:text-blue-400 hover:bg-blue-400/10 transition-all">
                 <Pencil size={14} />
@@ -260,8 +294,9 @@ export default function TasksPage() {
               className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
               <Upload size={15} />
             </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </motion.div>
     );
   };
@@ -384,6 +419,14 @@ export default function TasksPage() {
                       value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
                     <p className="text-xs text-muted-foreground">Past dates are not allowed</p>
                   </div>
+                  <label className="flex items-center gap-3 p-3 rounded-xl border border-border bg-secondary/20 cursor-pointer hover:bg-secondary/40 transition-colors">
+                    <input type="checkbox" className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      checked={form.is_recurring} onChange={(e) => setForm({ ...form, is_recurring: e.target.checked })} />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">Make it a recurring task</p>
+                      <p className="text-xs text-muted-foreground">This task will reset daily until completed or expired.</p>
+                    </div>
+                  </label>
                   <button type="submit" disabled={adding}
                     className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-3 rounded-xl font-semibold hover:bg-primary/90 transition-all disabled:opacity-70">
                     {adding ? <Loader2 size={18} className="animate-spin" /> : <><Plus size={16} /> Add Task</>}

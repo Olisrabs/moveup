@@ -53,6 +53,8 @@ export type Task = {
   description: string | null;
   due_date: string | null;
   status: 'pending' | 'completed';
+  is_recurring: boolean;
+  last_completed_at: string | null;
   created_at: string;
 };
 
