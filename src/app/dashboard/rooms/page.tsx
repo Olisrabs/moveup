@@ -176,12 +176,12 @@ export default function RoomsPage() {
 
     const entries: LeaderboardEntry[] = await Promise.all(
       members.map(async (m) => {
-        const [{ count: totalCount }, { count: doneCount }] = await Promise.all([
-          supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", room.id).eq("user_id", m.user_id),
-          supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", room.id).eq("user_id", m.user_id).eq("status", "completed"),
+        const [{ count: pendingCount }, { count: proofCount }] = await Promise.all([
+          supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", room.id).eq("user_id", m.user_id).eq("status", "pending"),
+          supabase.from("proofs").select("*", { count: "exact", head: true }).eq("room_id", room.id).eq("user_id", m.user_id),
         ]);
-        const total = totalCount ?? 0;
-        const done = doneCount ?? 0;
+        const done = proofCount ?? 0;
+        const total = done + (pendingCount ?? 0);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userData = m.users as any;
         return {
@@ -206,13 +206,22 @@ export default function RoomsPage() {
     setLoadingMemberTasks(true);
     setMemberTasks([]);
     const { data } = await supabase
-      .from('tasks')
-      .select('*, proofs(*)')
+      .from('proofs')
+      .select('*, tasks(*)')
       .eq('room_id', selectedRoom.id)
       .eq('user_id', entry.user_id)
-      .eq('status', 'completed')        // Only show completed tasks on the leaderboard
       .order('created_at', { ascending: false });
-    setMemberTasks((data as TaskWithProof[]) ?? []);
+      
+    // Map proofs back to a shape that the UI expects
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const syntheticTasks: TaskWithProof[] = (data ?? []).map((proof: any) => ({
+      ...proof.tasks,
+      id: proof.id, // Using proof ID as unique key for rendering
+      status: 'completed',
+      proofs: [proof]
+    }));
+    
+    setMemberTasks(syntheticTasks);
     setLoadingMemberTasks(false);
   };
 
@@ -305,13 +314,15 @@ export default function RoomsPage() {
     const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, users(display_name)").eq("room_id", selectedRoom.id);
     if (!members || members.length === 0) { setDistributeError("No members found."); setDistributing(false); return; }
     const entries = await Promise.all(members.map(async (m) => {
-      const [{ count: total }, { count: done }] = await Promise.all([
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id).eq("status", "completed"),
+      const [{ count: pendingCount }, { count: proofCount }] = await Promise.all([
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id).eq("status", "pending"),
+        supabase.from("proofs").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id),
       ]);
+      const done = proofCount ?? 0;
+      const total = done + (pendingCount ?? 0);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ud = m.users as any;
-      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total: total ?? 0, done: done ?? 0, pct: (total ?? 0) > 0 ? (done ?? 0) / (total ?? 0) : 0 };
+      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total, done, pct: total > 0 ? done / total : 0 };
     }));
     entries.sort((a, b) => b.pct - a.pct || b.done - a.done);
     const totalPool = Number(selectedRoom.commitment_fee) * selectedRoom.member_count;

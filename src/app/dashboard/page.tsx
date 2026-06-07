@@ -31,6 +31,7 @@ export default function DashboardOverview() {
   const { user, profile } = useAuth();
   const [rooms, setRooms] = useState<RoomWithMembers[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [totalProofsCount, setTotalProofsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,12 +68,16 @@ export default function DashboardOverview() {
         setRooms(roomsWithCounts);
       }
 
-      // Fetch all tasks for accurate counts and apply lazy reset
-      const { data: taskData } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      // Fetch all tasks and proofs for accurate counts and apply lazy reset
+      const [
+        { data: taskData },
+        { count: proofCount }
+      ] = await Promise.all([
+        supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("proofs").select("*", { count: "exact", head: true }).eq("user_id", user.id)
+      ]);
+
+      setTotalProofsCount(proofCount ?? 0);
 
       const todayStr = new Date().toISOString().split("T")[0];
       const processedTasks = (taskData ?? []).map(t => {
@@ -94,7 +99,7 @@ export default function DashboardOverview() {
   }, [user]);
 
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
-  const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const completedCount = totalProofsCount;
 
   const stats = [
     {
