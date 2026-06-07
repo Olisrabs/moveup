@@ -47,6 +47,7 @@ export default function TasksPage() {
   const [proofLink, setProofLink] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [proofExplanation, setProofExplanation] = useState("");
   const [submittingProof, setSubmittingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,7 +151,7 @@ export default function TasksPage() {
     if (task.status === "completed") return;
     setProofTask(task); setProofType("text");
     setProofText(""); setProofLink(""); setProofFile(null);
-    setProofPreview(null); setProofError(null);
+    setProofPreview(null); setProofError(null); setProofExplanation("");
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,14 +177,18 @@ export default function TasksPage() {
       contentText = proofText.trim();
     } else if (proofType === "link") {
       if (!proofLink.trim()) { setProofError("Please enter a URL."); setSubmittingProof(false); return; }
+      if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
       contentUrl = proofLink.trim();
+      contentText = proofExplanation.trim();
     } else {
       if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
+      if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
       const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${proofFile.name}`;
       const { error: uploadErr } = await supabase.storage.from("proofs").upload(fileName, proofFile);
       if (uploadErr) { setProofError(`Upload failed: ${uploadErr.message}`); setSubmittingProof(false); return; }
       const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
       contentUrl = urlData.publicUrl;
+      contentText = proofExplanation.trim();
     }
 
     const { error: proofErr } = await supabase.from("proofs").insert({
@@ -558,6 +563,15 @@ export default function TasksPage() {
                           <span className="text-xs">Max 10MB</span>
                         </button>
                       )}
+                    </div>
+                  )}
+
+                  {proofType !== "text" && (
+                    <div className="space-y-1.5 mt-4">
+                      <label className="text-sm font-medium">Explanation of Work *</label>
+                      <textarea className={`${inputClass} resize-none`} rows={3}
+                        placeholder="Explain what you did or what this proof represents..."
+                        value={proofExplanation} onChange={(e) => setProofExplanation(e.target.value)} />
                     </div>
                   )}
 

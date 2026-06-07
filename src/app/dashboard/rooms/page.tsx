@@ -38,6 +38,7 @@ export default function RoomsPage() {
   const [viewingMember, setViewingMember] = useState<LeaderboardEntry | null>(null);
   const [memberTasks, setMemberTasks] = useState<TaskWithProof[]>([]);
   const [loadingMemberTasks, setLoadingMemberTasks] = useState(false);
+  const [viewImageModal, setViewImageModal] = useState<string | null>(null);
 
   // Nudge / Reminder states
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -685,25 +686,40 @@ export default function RoomsPage() {
                                   </div>
                                 )}
                                 {proof.content_type === 'link' && (
-                                  <div className="flex items-center gap-2">
-                                    <LinkIcon size={14} className="text-muted-foreground shrink-0" />
-                                    <a href={proof.content_url ?? '#'} target="_blank" rel="noopener noreferrer"
-                                      className="text-xs text-primary underline underline-offset-2 truncate hover:text-primary/80">
-                                      {proof.content_url}
-                                    </a>
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <LinkIcon size={14} className="text-muted-foreground shrink-0" />
+                                      <a href={proof.content_url ?? '#'} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs text-primary underline underline-offset-2 truncate hover:text-primary/80">
+                                        {proof.content_url}
+                                      </a>
+                                    </div>
+                                    {proof.content_text && (
+                                      <div className="flex gap-2 bg-secondary/30 p-2.5 rounded-xl border border-border mt-1">
+                                        <FileText size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                                        <p className="text-xs text-foreground leading-relaxed italic">{proof.content_text}</p>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {proof.content_type === 'image' && proof.content_url && (
-                                  <div>
-                                    <div className="flex items-center gap-1.5 mb-2">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-1.5">
                                       <ImageIcon size={14} className="text-muted-foreground" />
                                       <span className="text-xs text-muted-foreground">Image proof</span>
                                     </div>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={proof.content_url} alt="Proof" className="w-full max-h-48 object-cover rounded-xl border border-border" />
+                                    <img src={proof.content_url} alt="Proof" onClick={() => setViewImageModal(proof.content_url)} 
+                                      className="w-full max-h-48 object-cover rounded-xl border border-border cursor-pointer hover:opacity-90 transition-opacity" />
+                                    {proof.content_text && (
+                                      <div className="flex gap-2 bg-secondary/30 p-2.5 rounded-xl border border-border mt-1">
+                                        <FileText size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                                        <p className="text-xs text-foreground leading-relaxed italic">{proof.content_text}</p>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
-                                <p className="text-xs text-muted-foreground mt-2">
+                                <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
                                   Submitted {new Date(proof.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 </p>
                               </div>
@@ -789,6 +805,23 @@ export default function RoomsPage() {
                 {joining ? <Loader2 size={18} className="animate-spin" /> : <><Hash size={16} /> Join Room</>}
               </button>
             </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* View Full Image Modal */}
+      <AnimatePresence>
+        {viewImageModal && (
+          <Modal onClose={() => setViewImageModal(null)} title="Image Proof">
+            <div className="flex items-center justify-center bg-black/5 rounded-xl overflow-hidden p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={viewImageModal} alt="Full screen proof" className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm" />
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setViewImageModal(null)} className="px-5 py-2.5 bg-secondary text-foreground rounded-xl text-sm font-semibold hover:bg-secondary/80 transition-colors">
+                Close Viewer
+              </button>
+            </div>
           </Modal>
         )}
       </AnimatePresence>
