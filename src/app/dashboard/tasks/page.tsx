@@ -76,7 +76,7 @@ export default function TasksPage() {
     if (roomIds.length > 0) {
       const { data: roomData } = await supabase
         .from("rooms")
-        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at")
+        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at, prize_distributed")
         .in("id", roomIds).eq("status", "active");
       setRooms(roomData ?? []);
     }
@@ -183,8 +183,17 @@ export default function TasksPage() {
     } else {
       if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
       if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
-      const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${proofFile.name}`;
-      const { error: uploadErr } = await supabase.storage.from("proofs").upload(fileName, proofFile);
+      const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
+      
+      // Convert File to ArrayBuffer to bypass Next.js fetch polyfill issues with File/Blob objects
+      const arrayBuffer = await proofFile.arrayBuffer();
+      
+      const { error: uploadErr } = await supabase.storage.from("proofs").upload(fileName, arrayBuffer, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: proofFile.type
+      });
       if (uploadErr) { setProofError(`Upload failed: ${uploadErr.message}`); setSubmittingProof(false); return; }
       const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
       contentUrl = urlData.publicUrl;
