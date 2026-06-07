@@ -67,15 +67,27 @@ export default function DashboardOverview() {
         setRooms(roomsWithCounts);
       }
 
-      // Fetch recent tasks
+      // Fetch all tasks for accurate counts and apply lazy reset
       const { data: taskData } = await supabase
         .from("tasks")
         .select("*")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(5);
+        .order("created_at", { ascending: false });
 
-      setTasks(taskData ?? []);
+      const todayStr = new Date().toISOString().split("T")[0];
+      const processedTasks = (taskData ?? []).map(t => {
+        if (t.is_recurring && t.status === "completed") {
+          const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
+          if (completedDate !== todayStr) {
+            // Lazily update DB in background
+            supabase.from("tasks").update({ status: "pending" }).eq("id", t.id).then();
+            return { ...t, status: "pending" as const };
+          }
+        }
+        return t;
+      });
+
+      setTasks(processedTasks);
       setLoading(false);
     };
     load();
@@ -282,7 +294,7 @@ export default function DashboardOverview() {
             </div>
           ) : (
             <div className="space-y-3">
-              {tasks.map((task) => (
+              {tasks.slice(0, 5).map((task) => (
                 <div
                   key={task.id}
                   className="flex items-center gap-3 bg-secondary/30 hover:bg-secondary/50 transition-colors rounded-xl px-4 py-3"
