@@ -11,12 +11,14 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase, type Notification, type Task, type Proof } from "@/lib/supabase";
 
 const typeIcons: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  member_join:   { icon: Users,         color: "text-blue-400",    bg: "bg-blue-400/10" },
-  task_complete: { icon: Trophy,        color: "text-accent",      bg: "bg-accent/10" },
-  coin_transfer: { icon: ArrowUpRight,  color: "text-orange-400",  bg: "bg-orange-400/10" },
-  coin_receive:  { icon: ArrowDownLeft, color: "text-emerald-400", bg: "bg-emerald-400/10" },
-  coin_buy:      { icon: ShoppingCart,  color: "text-violet-400",  bg: "bg-violet-400/10" },
-  general:       { icon: Bell,          color: "text-primary",     bg: "bg-primary/10" },
+  member_join:    { icon: Users,         color: "text-blue-400",    bg: "bg-blue-400/10" },
+  task_complete:  { icon: Trophy,        color: "text-accent",      bg: "bg-accent/10" },
+  task_reminder:  { icon: Bell,          color: "text-violet-400",  bg: "bg-violet-400/10" },
+  time_reminder:  { icon: Clock,         color: "text-amber-400",   bg: "bg-amber-400/10" },
+  coin_transfer:  { icon: ArrowUpRight,  color: "text-orange-400",  bg: "bg-orange-400/10" },
+  coin_receive:   { icon: ArrowDownLeft, color: "text-emerald-400", bg: "bg-emerald-400/10" },
+  coin_buy:       { icon: ShoppingCart,  color: "text-violet-400",  bg: "bg-violet-400/10" },
+  general:        { icon: Bell,          color: "text-primary",     bg: "bg-primary/10" },
 };
 
 type ProofModal = { task: Task; proof: Proof | null; memberName: string };

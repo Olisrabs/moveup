@@ -52,6 +52,10 @@ export type Task = {
   title: string;
   description: string | null;
   due_date: string | null;
+  /** Optional HH:MM time string (24-hour, from the TIME column) */
+  scheduled_time: string | null;
+  /** ISO timestamp — when we last sent a "time is near" reminder for this task */
+  last_reminder_sent_at: string | null;
   status: 'pending' | 'completed';
   is_recurring: boolean;
   last_completed_at: string | null;

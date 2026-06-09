@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
@@ -31,11 +31,11 @@ export default function TasksPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", description: "", room_id: "", due_date: "", is_recurring: false });
+  const [form, setForm] = useState({ title: "", description: "", room_id: "", due_date: "", scheduled_time: "", is_recurring: false });
 
   // Edit task
   const [editTask, setEditTask] = useState<Task | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", description: "", due_date: "" });
+  const [editForm, setEditForm] = useState({ title: "", description: "", due_date: "", scheduled_time: "" });
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editExpiredToast, setEditExpiredToast] = useState(false);
@@ -85,6 +85,67 @@ export default function TasksPage() {
 
   useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [user]);
 
+  // ── Reminder polling ─────────────────────────────────────────────────────────
+  // Runs every 60 s:
+  //   • Sends a "time_reminder" 10-20 min before any scheduled task
+  //   • Sends a "completion_reminder" for every pending task once every 3 hours
+  //   The real throttle lives in the API/DB (→ last_reminder_sent_at).
+  //   The client only makes the call when it looks stale, to avoid unnecessary requests.
+  const sendReminder = useCallback(async (taskId: string, type: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await fetch("/api/tasks/remind", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ type, taskId }),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const THREE_HOURS = 3 * 60 * 60 * 1000;
+
+    const check = () => {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const nowTs = Date.now();
+
+      setTasks(prev => {
+        prev.filter(t => t.status === "pending").forEach(t => {
+          // ── Time-based reminder (10-20 min before scheduled start) ──
+          if (t.scheduled_time) {
+            const [h, m] = (t.scheduled_time as string).split(":").map(Number);
+            const taskMins = h * 60 + m;
+            const diff = taskMins - nowMins;
+            if (diff >= 10 && diff <= 20) {
+              const lastSent = t.last_reminder_sent_at
+                ? new Date(t.last_reminder_sent_at).getTime()
+                : 0;
+              if (nowTs - lastSent > 50 * 60 * 1000) {
+                sendReminder(t.id, "time_reminder");
+              }
+            }
+          }
+
+          // ── Completion reminder — pre-flight DB check (API enforces final throttle) ──
+          // Only call the API when the DB field looks stale. This prevents flooding
+          // the server on every mount; the API will still reject duplicates within 3h.
+          const lastSent = t.last_reminder_sent_at
+            ? new Date(t.last_reminder_sent_at).getTime()
+            : 0;
+          if (nowTs - lastSent > THREE_HOURS) {
+            sendReminder(t.id, "completion_reminder");
+          }
+        });
+        return prev;
+      });
+    };
+
+    const interval = setInterval(check, 60_000);
+    check();
+    return () => clearInterval(interval);
+  }, [user, sendReminder]);
+
   const showExpiredToast = () => {
     setEditExpiredToast(true);
     setTimeout(() => setEditExpiredToast(false), 3500);
@@ -100,6 +161,7 @@ export default function TasksPage() {
       title: task.title,
       description: task.description ?? "",
       due_date: task.due_date ? task.due_date.split("T")[0] : "",
+      scheduled_time: task.scheduled_time ?? "",
     });
     setEditError(null);
   };
@@ -119,12 +181,13 @@ export default function TasksPage() {
       title: editForm.title,
       description: editForm.description || null,
       due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : null,
+      scheduled_time: editForm.scheduled_time || null,
     }).eq("id", editTask.id);
     if (error) { setEditError(error.message); setEditing(false); return; }
     setTasks((prev) =>
       prev.map((t) =>
         t.id === editTask.id
-          ? { ...t, title: editForm.title, description: editForm.description || null, due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : null }
+          ? { ...t, title: editForm.title, description: editForm.description || null, due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : null, scheduled_time: editForm.scheduled_time || null }
           : t
       )
     );
@@ -139,11 +202,12 @@ export default function TasksPage() {
       title: form.title, description: form.description || null,
       room_id: form.room_id, user_id: user.id,
       due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+      scheduled_time: form.scheduled_time || null,
       is_recurring: form.is_recurring,
     });
     if (error) { setAddError(error.message); setAdding(false); return; }
     setShowAdd(false);
-    setForm({ title: "", description: "", room_id: "", due_date: "", is_recurring: false });
+    setForm({ title: "", description: "", room_id: "", due_date: "", scheduled_time: "", is_recurring: false });
     fetchData(); setAdding(false);
   };
 
@@ -157,7 +221,8 @@ export default function TasksPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { setProofError("File must be under 10MB"); return; }
+    // 5 MB limit — mobile camera photos can be huge; keeps uploads reliable
+    if (file.size > 5 * 1024 * 1024) { setProofError("File must be under 5MB. Please compress or resize the image first."); return; }
     setProofFile(file); setProofError(null);
     const reader = new FileReader();
     reader.onload = (ev) => setProofPreview(ev.target?.result as string);
@@ -183,21 +248,51 @@ export default function TasksPage() {
     } else {
       if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
       if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
-      const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-      const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
-      
-      // Convert File to ArrayBuffer to bypass Next.js fetch polyfill issues with File/Blob objects
-      const arrayBuffer = await proofFile.arrayBuffer();
-      
-      const { error: uploadErr } = await supabase.storage.from("proofs").upload(fileName, arrayBuffer, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: proofFile.type
-      });
-      if (uploadErr) { setProofError(`Upload failed: ${uploadErr.message}`); setSubmittingProof(false); return; }
-      const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
-      contentUrl = urlData.publicUrl;
-      contentText = proofExplanation.trim();
+
+      try {
+        // Infer MIME type from extension when the browser (common on Android) returns an empty type
+        const inferMime = (file: File): string => {
+          if (file.type) return file.type;
+          const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+          const map: Record<string, string> = {
+            jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+            gif: "image/gif",  webp: "image/webp", heic: "image/heic",
+            heif: "image/heif", bmp: "image/bmp",
+          };
+          return map[ext] ?? "image/jpeg";
+        };
+
+        const mimeType = inferMime(proofFile);
+        const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
+
+        // Build a typed Blob — guarantees Supabase receives a valid content-type
+        const arrayBuffer = await proofFile.arrayBuffer();
+        const typedBlob = new Blob([arrayBuffer], { type: mimeType });
+
+        const { error: uploadErr } = await supabase.storage
+          .from("proofs")
+          .upload(fileName, typedBlob, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: mimeType,
+          });
+
+        if (uploadErr) {
+          setProofError(`Upload failed: ${uploadErr.message}`);
+          setSubmittingProof(false);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
+        contentUrl = urlData.publicUrl;
+        contentText = proofExplanation.trim();
+      } catch (uploadException) {
+        const msg = uploadException instanceof Error ? uploadException.message : "Unknown error";
+        setProofError(`Image upload error: ${msg}. Please try a smaller image or use a different format.`);
+        setSubmittingProof(false);
+        return;
+      }
     }
 
     const { error: proofErr } = await supabase.from("proofs").insert({
@@ -248,6 +343,13 @@ export default function TasksPage() {
     const isDone = task.status === "completed";
     const canEdit = !isDone && isTaskEditable(task);
     const minsLeft = editMinutesLeft(task);
+
+    const formatTime = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      const period = h >= 12 ? "PM" : "AM";
+      return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${period}`;
+    };
+
     return (
       <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
@@ -262,6 +364,11 @@ export default function TasksPage() {
           {task.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>}
           <div className="flex items-center gap-3 mt-2 flex-wrap">
             {room && <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{room.name}</span>}
+            {task.scheduled_time && (
+              <span className="text-xs bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full flex items-center gap-1" title="Scheduled start time">
+                <Clock size={10} />⏰ {formatTime(task.scheduled_time)}
+              </span>
+            )}
             {task.due_date && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <Clock size={11} />{new Date(task.due_date).toLocaleDateString()}
@@ -284,7 +391,7 @@ export default function TasksPage() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
           <button onClick={() => toggleRecurring(task)} title={task.is_recurring ? "Remove recurring" : "Make recurring"}
             className={`p-2 rounded-lg transition-all ${task.is_recurring ? "text-indigo-400 hover:bg-indigo-400/10" : "text-muted-foreground hover:text-indigo-400 hover:bg-indigo-400/10"}`}>
             <RefreshCw size={14} />
@@ -433,6 +540,12 @@ export default function TasksPage() {
                       value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
                     <p className="text-xs text-muted-foreground">Past dates are not allowed</p>
                   </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Start Time <span className="text-muted-foreground font-normal">(optional)</span></label>
+                    <input type="time" className={inputClass}
+                      value={form.scheduled_time} onChange={(e) => setForm({ ...form, scheduled_time: e.target.value })} />
+                    <p className="text-xs text-muted-foreground">You&apos;ll get a reminder ~15 min before this time</p>
+                  </div>
                   <label className="flex items-center gap-3 p-3 rounded-xl border border-border bg-secondary/20 cursor-pointer hover:bg-secondary/40 transition-colors">
                     <input type="checkbox" className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
                       checked={form.is_recurring} onChange={(e) => setForm({ ...form, is_recurring: e.target.checked })} />
@@ -486,6 +599,12 @@ export default function TasksPage() {
                     <label className="text-sm font-medium">Due Date</label>
                     <input type="date" className={inputClass} min={today}
                       value={editForm.due_date} onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Start Time <span className="text-muted-foreground font-normal">(optional)</span></label>
+                    <input type="time" className={inputClass}
+                      value={editForm.scheduled_time} onChange={(e) => setEditForm({ ...editForm, scheduled_time: e.target.value })} />
+                    <p className="text-xs text-muted-foreground">You&apos;ll get a reminder ~15 min before this time</p>
                   </div>
                   <button type="submit" disabled={editing}
                     className="w-full flex items-center justify-center gap-2 bg-blue-500 text-white py-3 rounded-xl font-semibold hover:bg-blue-500/90 transition-all disabled:opacity-70">
@@ -566,10 +685,10 @@ export default function TasksPage() {
                         </div>
                       ) : (
                         <button type="button" onClick={() => fileInputRef.current?.click()}
-                          className="w-full h-36 border-2 border-dashed border-border hover:border-primary/50 rounded-xl flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary transition-colors">
-                          <ImageIcon size={28} />
-                          <span className="text-sm">Click to select image</span>
-                          <span className="text-xs">Max 10MB</span>
+                          className="w-full h-44 border-2 border-dashed border-border hover:border-primary/50 active:border-primary rounded-xl flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary transition-colors">
+                          <ImageIcon size={32} />
+                          <span className="text-sm font-medium">Tap to select image</span>
+                          <span className="text-xs">JPG, PNG, WEBP &bull; Max 5MB</span>
                         </button>
                       )}
                     </div>
@@ -586,7 +705,9 @@ export default function TasksPage() {
 
                   <button type="submit" disabled={submittingProof}
                     className="w-full flex items-center justify-center gap-2 bg-accent text-white py-3 rounded-xl font-semibold hover:bg-accent/90 transition-all disabled:opacity-70">
-                    {submittingProof ? <Loader2 size={18} className="animate-spin" /> : <><Check size={16} /> Mark as Complete</>}
+                    {submittingProof
+                      ? <><Loader2 size={18} className="animate-spin" /> {proofType === "image" ? "Uploading image…" : "Submitting…"}</>
+                      : <><Check size={16} /> Mark as Complete</>}
                   </button>
                 </form>
               </div>
