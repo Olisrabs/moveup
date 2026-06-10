@@ -46,6 +46,7 @@ export default function TasksPage() {
   const [proofText, setProofText] = useState("");
   const [proofLink, setProofLink] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofFileBuffer, setProofFileBuffer] = useState<ArrayBuffer | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [proofExplanation, setProofExplanation] = useState("");
   const [submittingProof, setSubmittingProof] = useState(false);
@@ -214,7 +215,7 @@ export default function TasksPage() {
   const openProofModal = (task: Task) => {
     if (task.status === "completed") return;
     setProofTask(task); setProofType("text");
-    setProofText(""); setProofLink(""); setProofFile(null);
+    setProofText(""); setProofLink(""); setProofFile(null); setProofFileBuffer(null);
     setProofPreview(null); setProofError(null); setProofExplanation("");
   };
 
@@ -223,9 +224,22 @@ export default function TasksPage() {
     if (!file) return;
     // 5 MB limit — mobile camera photos can be huge; keeps uploads reliable
     if (file.size > 5 * 1024 * 1024) { setProofError("File must be under 5MB. Please compress or resize the image first."); return; }
-    setProofFile(file); setProofError(null);
+    setProofFile(file); setProofFileBuffer(null); setProofError(null);
+
+    // Eagerly read the file into memory right now, while the browser still
+    // holds a valid permission token for it. If we defer this to submit time
+    // the OS/browser may revoke file access (common on Android), causing a
+    // "permission problems" DOMException from arrayBuffer().
     const reader = new FileReader();
-    reader.onload = (ev) => setProofPreview(ev.target?.result as string);
+    reader.onload = (ev) => {
+      setProofPreview(ev.target?.result as string);
+      // Also read as ArrayBuffer in parallel so it's ready at submit time
+      const bufReader = new FileReader();
+      bufReader.onload = (bufEv) => setProofFileBuffer(bufEv.target?.result as ArrayBuffer);
+      bufReader.onerror = () => setProofError("Could not read the selected image. Please try a different file.");
+      bufReader.readAsArrayBuffer(file);
+    };
+    reader.onerror = () => setProofError("Could not preview the selected image. Please try a different file.");
     reader.readAsDataURL(file);
   };
 
@@ -248,6 +262,10 @@ export default function TasksPage() {
     } else {
       if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
       if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
+      // Guard: buffer is read asynchronously on file select. On very slow devices
+      // it may not be ready yet. Block submission rather than fall back to the
+      // unsafe arrayBuffer() call that causes the permission DOMException.
+      if (!proofFileBuffer) { setProofError("Image is still loading — please wait a moment and try again."); setSubmittingProof(false); return; }
 
       try {
         // Infer MIME type from extension when the browser (common on Android) returns an empty type
@@ -266,9 +284,10 @@ export default function TasksPage() {
         const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
 
-        // Build a typed Blob — guarantees Supabase receives a valid content-type
-        const arrayBuffer = await proofFile.arrayBuffer();
-        const typedBlob = new Blob([arrayBuffer], { type: mimeType });
+        // Use the pre-read buffer captured eagerly at file-selection time.
+        // Never call proofFile.arrayBuffer() here — the OS file handle may
+        // have been revoked by the browser after the user spent time on the form.
+        const typedBlob = new Blob([proofFileBuffer], { type: mimeType });
 
         const { error: uploadErr } = await supabase.storage
           .from("proofs")
@@ -678,7 +697,7 @@ export default function TasksPage() {
                         <div className="relative">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={proofPreview} alt="Proof preview" className="w-full h-48 object-cover rounded-xl border border-border" />
-                          <button type="button" onClick={() => { setProofFile(null); setProofPreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                          <button type="button" onClick={() => { setProofFile(null); setProofFileBuffer(null); setProofPreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                             className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-lg text-white hover:bg-black/80">
                             <X size={14} />
                           </button>
