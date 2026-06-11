@@ -35,6 +35,8 @@ export type Room = {
   created_at: string;
   ends_at: string;
   prize_distributed: boolean;
+  /** ISO timestamp — when the last room-wide reminder was sent */
+  last_reminder_at: string | null;
 };
 
 export type RoomMember = {

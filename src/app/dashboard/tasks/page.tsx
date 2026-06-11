@@ -77,7 +77,7 @@ export default function TasksPage() {
     if (roomIds.length > 0) {
       const { data: roomData } = await supabase
         .from("rooms")
-        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at, prize_distributed")
+        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at, prize_distributed, last_reminder_at")
         .in("id", roomIds).eq("status", "active");
       setRooms(roomData ?? []);
     }
@@ -226,21 +226,22 @@ export default function TasksPage() {
     if (file.size > 5 * 1024 * 1024) { setProofError("File must be under 5MB. Please compress or resize the image first."); return; }
     setProofFile(file); setProofFileBuffer(null); setProofError(null);
 
+    try {
+      // Create a local object URL for instant, memory-efficient preview
+      setProofPreview(URL.createObjectURL(file));
+    } catch (err) {
+      setProofError("Could not preview the selected image. Please try a different file.");
+      return;
+    }
+
     // Eagerly read the file into memory right now, while the browser still
     // holds a valid permission token for it. If we defer this to submit time
     // the OS/browser may revoke file access (common on Android), causing a
     // "permission problems" DOMException from arrayBuffer().
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setProofPreview(ev.target?.result as string);
-      // Also read as ArrayBuffer in parallel so it's ready at submit time
-      const bufReader = new FileReader();
-      bufReader.onload = (bufEv) => setProofFileBuffer(bufEv.target?.result as ArrayBuffer);
-      bufReader.onerror = () => setProofError("Could not read the selected image. Please try a different file.");
-      bufReader.readAsArrayBuffer(file);
-    };
-    reader.onerror = () => setProofError("Could not preview the selected image. Please try a different file.");
-    reader.readAsDataURL(file);
+    const bufReader = new FileReader();
+    bufReader.onload = (bufEv) => setProofFileBuffer(bufEv.target?.result as ArrayBuffer);
+    bufReader.onerror = () => setProofError("Could not read the selected image. Please try a different file.");
+    bufReader.readAsArrayBuffer(file);
   };
 
   const handleProofSubmit = async (e: React.FormEvent) => {
