@@ -17,6 +17,7 @@ import {
   Crown,
   BadgeCheck,
   LogOut,
+  UserMinus,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type StaffInvitation } from "@/lib/supabase";
@@ -52,6 +53,7 @@ export default function ProfilePage() {
   // Pending invitations (for this user if they're a staff candidate)
   const [pendingInvites, setPendingInvites] = useState<StaffInvitation[]>([]);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -150,6 +152,27 @@ export default function ProfilePage() {
       alert(data.error ?? "Failed to respond");
     }
     setRespondingId(null);
+  };
+
+  const handleRemoveStaff = async (invitationId: string) => {
+    if (!confirm("Are you sure you want to remove this staff member / revoke invitation?")) return;
+    setRemovingId(invitationId);
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+
+    const res = await fetch("/api/partner/remove-staff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ invitationId }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      setMyStaff((prev) => prev.filter((i) => i.id !== invitationId));
+    } else {
+      alert(data.error ?? "Failed to remove staff");
+    }
+    setRemovingId(null);
   };
 
   if (!profile) return null;
@@ -377,9 +400,23 @@ export default function ProfilePage() {
                     </p>
                     <p className="text-xs text-muted-foreground">{inv.staff_email}</p>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor[inv.status]}`}>
-                    {inv.status}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor[inv.status]}`}>
+                      {inv.status}
+                    </span>
+                    <button
+                      onClick={() => handleRemoveStaff(inv.id)}
+                      disabled={removingId === inv.id}
+                      className="text-red-400 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      title={inv.status === "pending" ? "Cancel invitation" : "Remove staff"}
+                    >
+                      {removingId === inv.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <UserMinus size={14} />
+                      )}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
