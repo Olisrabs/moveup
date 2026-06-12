@@ -16,6 +16,8 @@ import {
   Building2,
   UserPlus,
   Calendar,
+  UserMinus,
+  ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type PartnershipCode } from "@/lib/supabase";
@@ -57,6 +59,12 @@ export default function AdminPanelPage() {
   const [promoting, setPromoting] = useState(false);
   const [promoteMsg, setPromoteMsg] = useState<string | null>(null);
 
+  // Admins list
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [demotingId, setDemotingId] = useState<string | null>(null);
+  const [demoteError, setDemoteError] = useState<string | null>(null);
+
   // Redirect if not super admin
   useEffect(() => {
     if (!isSuperAdmin && profile) router.replace("/dashboard");
@@ -79,7 +87,22 @@ export default function AdminPanelPage() {
     setLoadingCodes(false);
   }, [isSuperAdmin]);
 
-  useEffect(() => { fetchCodes(); }, [fetchCodes]);
+  const fetchAdmins = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    setLoadingAdmins(true);
+    const token = await getToken();
+    const res = await fetch("/api/super-admin/admins", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (res.ok) setAdmins(data.admins ?? []);
+    setLoadingAdmins(false);
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    fetchCodes();
+    fetchAdmins();
+  }, [fetchCodes, fetchAdmins]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,11 +165,36 @@ export default function AdminPanelPage() {
     if (res.ok) {
       setPromoteMsg(`✅ ${data.promotedUser} has been promoted to Super Admin.`);
       setPromoteEmail("");
+      fetchAdmins();
     } else {
       setPromoteMsg(`❌ ${data.error}`);
     }
     setPromoting(false);
     setTimeout(() => setPromoteMsg(null), 5000);
+  };
+
+  const handleDemote = async (targetUserId: string) => {
+    setDemoteError(null);
+    setDemotingId(targetUserId);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/super-admin/demote-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPromoteMsg(`ℹ️ ${data.demotedUser} has been demoted back to Member.`);
+        fetchAdmins();
+      } else {
+        setDemoteError(data.error ?? "Failed to demote user");
+      }
+    } catch (err: any) {
+      setDemoteError(err.message ?? "An unexpected error occurred");
+    } finally {
+      setDemotingId(null);
+    }
   };
 
   if (!isSuperAdmin) return null;
@@ -328,7 +376,7 @@ export default function AdminPanelPage() {
           Enter the email of a registered MoveUp user to grant them full Super Admin access.
         </p>
 
-        <form onSubmit={handlePromote} className="flex gap-3">
+        <form onSubmit={handlePromote} className="flex gap-3 mb-6">
           <div className="relative flex-1">
             <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -355,6 +403,73 @@ export default function AdminPanelPage() {
             {promoteMsg}
           </p>
         )}
+
+        {/* Current Admins list with demote action */}
+        <div className="border-t border-border/30 pt-6 mt-6">
+          <h3 className="text-sm font-semibold mb-4 text-foreground flex items-center gap-2">
+            <Crown size={16} className="text-amber-400" />
+            Active Super Admins
+          </h3>
+
+          {demoteError && (
+            <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-xl mb-3 flex items-center gap-1.5">
+              <AlertCircle size={12} /> {demoteError}
+            </p>
+          )}
+
+          {loadingAdmins ? (
+            <div className="space-y-2">
+              {[1, 2].map((i) => <div key={i} className="h-12 rounded-xl bg-secondary/30 animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {admins.map((adm) => {
+                const isMe = adm.id === user?.id;
+                const cannotRemove = adm.isPrimary || isMe;
+                return (
+                  <div key={adm.id} className="flex items-center justify-between bg-secondary/20 rounded-xl px-4 py-3 border border-border/10">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        {adm.display_name || "Admin"}
+                        {isMe && <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">You</span>}
+                        {adm.isPrimary && (
+                          <span className="text-xs bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20 flex items-center gap-0.5">
+                            Owner
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">{adm.email}</p>
+                    </div>
+                    
+                    {!cannotRemove ? (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to remove Super Admin privileges from ${adm.display_name || adm.email}?`)) {
+                            handleDemote(adm.id);
+                          }
+                        }}
+                        disabled={demotingId === adm.id}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold border border-red-500/20 transition-all disabled:opacity-50"
+                      >
+                        {demotingId === adm.id ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <UserMinus size={12} />
+                        )}
+                        Remove Admin
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic flex items-center gap-1">
+                        <ShieldAlert size={12} className="text-muted-foreground/60" />
+                        Non-removable
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </motion.div>
     </div>
   );
