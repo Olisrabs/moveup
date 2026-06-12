@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
 
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    const { data: { user }, error: authErr } = await userClient.auth.getUser(token);
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized user" }, { status: 401 });
     }
@@ -59,10 +59,14 @@ export async function POST(req: NextRequest) {
     if (members && members.length > 0) {
       members.forEach((m: any) => {
         if (m.user_id && m.users) {
-          uniqueUsersMap.set(m.user_id, {
-            email: m.users.email || "",
-            display_name: m.users.display_name || "Member",
-          });
+          // PostgREST may return users relation as a single object or a single-element array
+          const userObj = Array.isArray(m.users) ? m.users[0] : m.users;
+          if (userObj) {
+            uniqueUsersMap.set(m.user_id, {
+              email: userObj.email || "",
+              display_name: userObj.display_name || "Member",
+            });
+          }
         }
       });
     }
@@ -78,7 +82,9 @@ export async function POST(req: NextRequest) {
         type: "system_policy_reset",
       }));
 
-      await adminDb.from("notifications").insert(notificationsInsert);
+      if (notificationsInsert.length > 0) {
+        await adminDb.from("notifications").insert(notificationsInsert);
+      }
 
       // 5. Send Email Notifications if SMTP is configured
       const smtpHost = process.env.SMTP_HOST;
@@ -86,52 +92,58 @@ export async function POST(req: NextRequest) {
       const smtpPass = process.env.SMTP_PASS;
 
       if (smtpHost && smtpUser && smtpPass) {
-        try {
-          const nodemailer = await import("nodemailer");
-          const transporter = nodemailer.default.createTransport({
-            host: smtpHost,
-            port: parseInt(process.env.SMTP_PORT || "587"),
-            secure: process.env.SMTP_SECURE === "true",
-            auth: { user: smtpUser, pass: smtpPass },
-          });
-
-          // Send emails asynchronously in the background so we don't timeout the HTTP response
-          const emailPromises = Array.from(uniqueUsersMap.entries()).map(([_, info]) => {
-            if (!info.email) return Promise.resolve();
-
-            const mailOptions = {
-              from: `"MoveUp Platform" <${smtpUser}>`,
-              to: info.email,
-              subject: "⚠️ MoveUp Policy Update: Action Required to Re-join Rooms",
-              html: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; rounded: 8px;">
-                  <h2 style="color: #6d28d9; text-align: center;">MoveUp Policy Update</h2>
-                  <p>Hello ${info.display_name},</p>
-                  <p>We are writing to inform you that MoveUp has officially completed its migration to a <strong>real-money wallet system (₦)</strong>.</p>
-                  <p>To ensure system integrity and fairness, <strong>all previous room memberships have been reset</strong>. If you were active in any rooms, you have been checked out.</p>
-                  <p><strong>To join your rooms back and start competing again:</strong></p>
-                  <ol>
-                    <li>Log in to your account at <a href="${req.nextUrl.origin}" style="color: #6d28d9; font-weight: bold;">MoveUp</a>.</li>
-                    <li>Go to your <strong>Wallet</strong> and fund your account using our secure Paystack gateway.</li>
-                    <li>Enter the room code to join back and pay the required commitment fee.</li>
-                  </ol>
-                  <p>Thank you for your cooperation and dedication to building positive habits!</p>
-                  <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 20px 0;" />
-                  <p style="font-size: 12px; color: #a1a1aa; text-align: center;">MoveUp Accountability Platform &copy; ${new Date().getFullYear()}</p>
-                </div>
-              `,
-            };
-
-            return transporter.sendMail(mailOptions).catch(err => {
-              console.error(`Failed to send reset email to ${info.email}:`, err);
+        // Run the email processing in the background to avoid timing out the HTTP response.
+        // We use a self-invoking async function that doesn't block the API return.
+        (async () => {
+          try {
+            // @ts-ignore
+            const nodemailer = (await import("nodemailer")) as any;
+            const transporter = (nodemailer.default || nodemailer).createTransport({
+              host: smtpHost,
+              port: parseInt(process.env.SMTP_PORT || "587"),
+              secure: process.env.SMTP_SECURE === "true",
+              auth: { user: smtpUser, pass: smtpPass },
             });
-          });
 
-          // Wait for all email deliveries to complete or fail
-          await Promise.all(emailPromises);
-        } catch (smtpErr) {
-          console.error("Nodemailer transporter error:", smtpErr);
-        }
+            // Send emails in small serial chunks to avoid overloading SMTP server or hit rate limits
+            const usersList = Array.from(uniqueUsersMap.entries());
+            for (const [_, info] of usersList) {
+              if (!info.email) continue;
+
+              const mailOptions = {
+                from: `"MoveUp Platform" <${smtpUser}>`,
+                to: info.email,
+                subject: "⚠️ MoveUp Policy Update: Action Required to Re-join Rooms",
+                html: `
+                  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+                    <h2 style="color: #6d28d9; text-align: center;">MoveUp Policy Update</h2>
+                    <p>Hello ${info.display_name},</p>
+                    <p>We are writing to inform you that MoveUp has officially completed its migration to a <strong>real-money wallet system (₦)</strong>.</p>
+                    <p>To ensure system integrity and fairness, <strong>all previous room memberships have been reset</strong>. If you were active in any rooms, you have been checked out.</p>
+                    <p><strong>To join your rooms back and start competing again:</strong></p>
+                    <ol>
+                      <li>Log in to your account at <a href="${req.nextUrl.origin}" style="color: #6d28d9; font-weight: bold;">MoveUp</a>.</li>
+                      <li>Go to your <strong>Wallet</strong> and fund your account using our secure Paystack gateway.</li>
+                      <li>Enter the room code to join back and pay the required commitment fee.</li>
+                    </ol>
+                    <p>Thank you for your cooperation and dedication to building positive habits!</p>
+                    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 20px 0;" />
+                    <p style="font-size: 12px; color: #a1a1aa; text-align: center;">MoveUp Accountability Platform &copy; ${new Date().getFullYear()}</p>
+                  </div>
+                `,
+              };
+
+              try {
+                await transporter.sendMail(mailOptions);
+              } catch (err) {
+                console.error(`Failed to send reset email to ${info.email}:`, err);
+              }
+            }
+            console.log(`Finished sending room reset emails to ${affectedUsersCount} user(s).`);
+          } catch (smtpErr) {
+            console.error("Nodemailer transporter or background process error:", smtpErr);
+          }
+        })();
       }
     }
 
