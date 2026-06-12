@@ -230,17 +230,20 @@ export default function TasksPage() {
       // Create a local object URL for instant, memory-efficient preview
       setProofPreview(URL.createObjectURL(file));
     } catch (err) {
-      setProofError("Could not preview the selected image. Please try a different file.");
-      return;
+      console.warn("Could not preview the selected image:", err);
     }
 
     // Eagerly read the file into memory right now, while the browser still
     // holds a valid permission token for it. If we defer this to submit time
     // the OS/browser may revoke file access (common on Android), causing a
     // "permission problems" DOMException from arrayBuffer().
+    // We treat this as a non-blocking progressive enhancement: if FileReader fails,
+    // we'll gracefully fall back to direct file upload in handleProofSubmit.
     const bufReader = new FileReader();
     bufReader.onload = (bufEv) => setProofFileBuffer(bufEv.target?.result as ArrayBuffer);
-    bufReader.onerror = () => setProofError("Could not read the selected image. Please try a different file.");
+    bufReader.onerror = (err) => {
+      console.warn("Eager read failed. Will fallback to direct file upload.", err);
+    };
     bufReader.readAsArrayBuffer(file);
   };
 
@@ -263,10 +266,6 @@ export default function TasksPage() {
     } else {
       if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
       if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
-      // Guard: buffer is read asynchronously on file select. On very slow devices
-      // it may not be ready yet. Block submission rather than fall back to the
-      // unsafe arrayBuffer() call that causes the permission DOMException.
-      if (!proofFileBuffer) { setProofError("Image is still loading — please wait a moment and try again."); setSubmittingProof(false); return; }
 
       try {
         // Infer MIME type from extension when the browser (common on Android) returns an empty type
@@ -285,10 +284,11 @@ export default function TasksPage() {
         const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
         const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
 
-        // Use the pre-read buffer captured eagerly at file-selection time.
-        // Never call proofFile.arrayBuffer() here — the OS file handle may
-        // have been revoked by the browser after the user spent time on the form.
-        const typedBlob = new Blob([proofFileBuffer], { type: mimeType });
+        // Fallback: use pre-read buffer to create a Blob if available.
+        // Otherwise, upload the proofFile directly.
+        const typedBlob = proofFileBuffer
+          ? new Blob([proofFileBuffer], { type: mimeType })
+          : proofFile;
 
         const { error: uploadErr } = await supabase.storage
           .from("proofs")
