@@ -19,7 +19,40 @@ export type UserProfile = {
   display_name: string | null;
   balance: number; // Naira, stored as NUMERIC(12,2)
   is_admin?: boolean;
+  role?: 'user' | 'partner' | 'staff' | 'super_admin';
+  phone?: string | null;
+  business_name?: string | null;
+  partner_id?: string | null;
+  partnership_expires_at?: string | null;
   created_at: string;
+};
+
+export type PartnershipCode = {
+  id: string;
+  code: string;
+  created_by: string | null;
+  business_name: string;
+  duration_days: number;
+  expires_at: string;
+  used_by: string | null;
+  used_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  // joined fields
+  used_by_user?: { display_name: string | null; email: string | null } | null;
+};
+
+export type StaffInvitation = {
+  id: string;
+  partner_id: string;
+  staff_email: string;
+  staff_user_id: string | null;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+  responded_at: string | null;
+  // joined
+  partner?: { display_name: string | null; business_name: string | null } | null;
+  staff_user?: { display_name: string | null; email: string | null } | null;
 };
 
 export type Room = {

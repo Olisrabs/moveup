@@ -21,7 +21,7 @@ type LeaderboardEntry = {
 };
 
 export default function RoomsPage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, isObserver, isPartner } = useAuth();
   const [rooms, setRooms] = useState<RoomWithMembers[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -241,7 +241,9 @@ export default function RoomsPage() {
     setCreating(true); setCreateError(null);
     const fee = parseFloat(form.commitment_fee);
     const currentBalance = Number(profile?.balance ?? 0);
-    if (currentBalance < fee) {
+
+    // Observers (partner/staff/super_admin) create rooms without paying
+    if (!isObserver && currentBalance < fee) {
       setCreateError(`Insufficient wallet balance. You need ${formatNaira(fee)} to create this room but your balance is ${formatNaira(currentBalance)}.`);
       setCreating(false); return;
     }
@@ -253,14 +255,28 @@ export default function RoomsPage() {
       created_by: user.id, ends_at: endsAt,
     }).select().single();
     if (error) { setCreateError(error.message); setCreating(false); return; }
-    // Deduct commitment fee from creator's balance
-    const newBalance = currentBalance - fee;
-    await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
-    await supabase.from("wallet_transactions").insert({
-      user_id: user.id, amount: fee, type: "commitment_fee",
-      description: `Commitment fee for room "${form.name}"`,
-    });
-    await supabase.from("room_members").insert({ room_id: roomData.id, user_id: user.id, room_display_name: profile?.display_name || form.name });
+
+    if (isObserver) {
+      // Observers join as non-competing monitors — no fee deducted
+      await supabase.from("room_members").insert({
+        room_id: roomData.id, user_id: user.id,
+        room_display_name: profile?.display_name || form.name,
+        member_type: isPartner ? "partner_observer" : "staff_observer",
+        fee_waived: true,
+      });
+    } else {
+      // Regular user — deduct commitment fee
+      const newBalance = currentBalance - fee;
+      await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
+      await supabase.from("wallet_transactions").insert({
+        user_id: user.id, amount: fee, type: "commitment_fee",
+        description: `Commitment fee for room "${form.name}"`,
+      });
+      await supabase.from("room_members").insert({
+        room_id: roomData.id, user_id: user.id,
+        room_display_name: profile?.display_name || form.name,
+      });
+    }
     await refreshProfile();
     setShowCreate(false);
     setForm({ name: "", description: "", duration_days: "30", commitment_fee: "500", max_members: "" });
@@ -273,26 +289,40 @@ export default function RoomsPage() {
     setJoining(true); setJoinError(null);
     const { data: room, error } = await supabase.from("rooms").select("*").eq("code", joinCode.toUpperCase()).eq("status", "active").single();
     if (error || !room) { setJoinError("Room not found or no longer active."); setJoining(false); return; }
-    // Check balance
+
     const fee = Number(room.commitment_fee);
     const currentBalance = Number(profile?.balance ?? 0);
-    if (currentBalance < fee) {
-      setJoinError(`Insufficient wallet balance. This room requires ${formatNaira(fee)} but your balance is ${formatNaira(currentBalance)}. Fund your wallet first.`);
-      setJoining(false); return;
+
+    if (isObserver) {
+      // Observers join without paying
+      const { error: joinErr } = await supabase.from("room_members").insert({
+        room_id: room.id, user_id: user.id,
+        room_display_name: joinName || profile?.display_name || "Observer",
+        member_type: isPartner ? "partner_observer" : "staff_observer",
+        fee_waived: true,
+      });
+      if (joinErr) { setJoinError(joinErr.code === "23505" ? "You are already a member of this room." : joinErr.message); setJoining(false); return; }
+    } else {
+      // Regular user — check balance and deduct fee
+      if (currentBalance < fee) {
+        setJoinError(`Insufficient wallet balance. This room requires ${formatNaira(fee)} but your balance is ${formatNaira(currentBalance)}. Fund your wallet first.`);
+        setJoining(false); return;
+      }
+      const { error: joinErr } = await supabase.from("room_members").insert({
+        room_id: room.id, user_id: user.id,
+        room_display_name: joinName || profile?.display_name || "Member",
+      });
+      if (joinErr) { setJoinError(joinErr.code === "23505" ? "You are already a member of this room." : joinErr.message); setJoining(false); return; }
+      // Deduct fee
+      const newBalance = currentBalance - fee;
+      await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
+      await supabase.from("wallet_transactions").insert({
+        user_id: user.id, amount: fee, type: "commitment_fee",
+        description: `Commitment fee for joining "${room.name}"`,
+      });
     }
-    const { error: joinErr } = await supabase.from("room_members").insert({
-      room_id: room.id, user_id: user.id, room_display_name: joinName || profile?.display_name || "Member",
-    });
-    if (joinErr) { setJoinError(joinErr.code === "23505" ? "You are already a member of this room." : joinErr.message); setJoining(false); return; }
-    // Deduct fee
-    const newBalance = currentBalance - fee;
-    await supabase.from("users").update({ balance: newBalance }).eq("id", user.id);
-    await supabase.from("wallet_transactions").insert({
-      user_id: user.id, amount: fee, type: "commitment_fee",
-      description: `Commitment fee for joining "${room.name}"`,
-    });
-    // Notify existing members
-    const { data: existingMembers } = await supabase.from("room_members").select("user_id").eq("room_id", room.id).neq("user_id", user.id);
+    // Notify existing participants
+    const { data: existingMembers } = await supabase.from("room_members").select("user_id").eq("room_id", room.id).neq("user_id", user.id).eq("member_type", "participant");
     if (existingMembers && existingMembers.length > 0) {
       await supabase.from("notifications").insert(
         existingMembers.map((m) => ({

@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, type UserProfile } from "./supabase";
+import { isSuperAdmin, isPartner, isObserver, isStaff } from "./roles";
 // UserProfile.balance replaces the old UserProfile.coins field (migration_v4)
 
 type AuthContextType = {
@@ -18,6 +19,11 @@ type AuthContextType = {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  // Role helpers — derived from profile.role
+  isSuperAdmin: boolean;
+  isPartner: boolean;
+  isStaff: boolean;
+  isObserver: boolean;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -26,6 +32,10 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   refreshProfile: async () => {},
+  isSuperAdmin: false,
+  isPartner: false,
+  isStaff: false,
+  isObserver: false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -80,9 +90,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
 
+  const role = profile?.role;
+
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signOut, refreshProfile }}
+      value={{
+        user,
+        profile,
+        loading,
+        signOut,
+        refreshProfile,
+        isSuperAdmin: isSuperAdmin(role),
+        isPartner: isPartner(role),
+        isStaff: isStaff(role),
+        isObserver: isObserver(role),
+      }}
     >
       {children}
     </AuthContext.Provider>

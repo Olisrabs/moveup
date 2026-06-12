@@ -55,18 +55,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized user", details: authErr?.message }, { status: 401 });
     }
 
-    // Now instantiate the admin client to check is_admin flags and process updates
+    // Now instantiate the admin client to check super_admin role and process updates
     const adminDb = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check is_admin flag
+    // Check super_admin role (also accepts legacy is_admin=true)
     const { data: userProfile, error: profileErr } = await adminDb
       .from("users")
-      .select("is_admin")
+      .select("is_admin, role")
       .eq("id", user.id)
       .single();
 
-    if (profileErr || !userProfile || !userProfile.is_admin) {
-      return NextResponse.json({ error: "Forbidden: Admin access only" }, { status: 403 });
+    if (profileErr || !userProfile || (!userProfile.is_admin && userProfile.role !== "super_admin")) {
+      return NextResponse.json({ error: "Forbidden: Super Admin access only" }, { status: 403 });
     }
 
     // 2. Fetch the withdrawal request

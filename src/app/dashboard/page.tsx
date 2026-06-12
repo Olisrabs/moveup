@@ -12,6 +12,9 @@ import {
   ArrowRight,
   TrendingUp,
   Zap,
+  Building2,
+  Users,
+  Crown,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Room, type Task, formatNaira } from "@/lib/supabase";
@@ -28,7 +31,7 @@ const fadeUp = {
 };
 
 export default function DashboardOverview() {
-  const { user, profile } = useAuth();
+  const { user, profile, isPartner, isSuperAdmin } = useAuth();
   const [rooms, setRooms] = useState<RoomWithMembers[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [totalProofsCount, setTotalProofsCount] = useState(0);
@@ -353,22 +356,46 @@ export default function DashboardOverview() {
               desc: "Start a new accountability challenge",
               href: "/dashboard/rooms",
               icon: DoorOpen,
+              show: true,
             },
             {
               label: "Add a Task",
               desc: "Track your daily commitments",
               href: "/dashboard/tasks",
               icon: CheckSquare,
+              show: true,
             },
             {
               label: "My Wallet",
               desc: "View balance, fund & withdraw",
               href: "/dashboard/wallet",
               icon: TrendingUp,
+              show: true,
             },
-          ].map((action) => (
+            {
+              label: "Add Staff",
+              desc: "Invite staff members to monitor rooms",
+              href: "/dashboard/profile",
+              icon: Users,
+              show: isPartner,
+            },
+            {
+              label: "Partner Monitor",
+              desc: "View staff performance & room activity",
+              href: "/dashboard/partner",
+              icon: Building2,
+              show: isPartner,
+            },
+            {
+              label: "Admin Panel",
+              desc: "Manage codes, promotions & withdrawals",
+              href: "/dashboard/admin",
+              icon: Crown,
+              show: isSuperAdmin,
+            },
+          ].filter((a) => a.show).map((action) => (
             <Link
-              key={action.href}
+              key={action.href + action.label}
               href={action.href}
               className="glass-card rounded-2xl p-5 flex items-start gap-4 hover:border-primary/40 transition-all group"
             >

@@ -23,7 +23,7 @@ const typeConfig: Record<string, { label: string; icon: React.ElementType; color
 };
 
 export default function WalletPage() {
-  const { profile, user, refreshProfile, loading: authLoading } = useAuth();
+  const { profile, user, refreshProfile, loading: authLoading, isSuperAdmin } = useAuth();
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +81,7 @@ export default function WalletPage() {
   }, [user]);
 
   const fetchAdminRequests = useCallback(async () => {
-    if (!profile?.is_admin) return;
+    if (!isSuperAdmin) return;
     setLoadingAdmin(true);
     const { data } = await supabase
       .from("withdrawal_requests")
@@ -90,7 +90,7 @@ export default function WalletPage() {
       .order("created_at", { ascending: true });
     setAdminRequests((data as WithdrawalRequest[]) ?? []);
     setLoadingAdmin(false);
-  }, [profile?.is_admin]);
+  }, [isSuperAdmin]);
 
   const initData = useCallback(async () => {
     setLoading(true);
@@ -479,7 +479,7 @@ export default function WalletPage() {
       </div>
 
       {/* ── Admin Control Panel ────────────────────────────────────────────────── */}
-      {profile?.is_admin && (
+      {isSuperAdmin && (
         <div className="border border-red-500/20 bg-red-500/[0.02] rounded-3xl p-6 mt-8 space-y-4">
           <h3 className="font-bold text-red-500 flex items-center gap-2">
             <ShieldAlert size={18} /> Admin Control Panel — Pending Manual Payouts
@@ -530,7 +530,7 @@ export default function WalletPage() {
       )}
 
       {/* ── Admin System Management ────────────────────────────────────────────── */}
-      {profile?.is_admin && (
+      {isSuperAdmin && (
         <div className="border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl p-6 mt-8 space-y-4">
           <h3 className="font-bold text-amber-500 flex items-center gap-2">
             <ShieldAlert size={18} /> Admin Settings &amp; Actions

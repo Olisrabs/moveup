@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, DoorOpen, CheckSquare, Wallet,
-  Bell, LogOut, Menu, X,
+  Bell, LogOut, Menu, X, User, Building2, Crown,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/lib/supabase";
 import { formatNaira } from "@/lib/supabase";
+
+
 
 const navItems = [
   { label: "Overview",      href: "/dashboard",               icon: LayoutDashboard, exact: true },
@@ -24,17 +26,21 @@ const navItems = [
 ];
 
 const pageTitles: Record<string, string> = {
-  "/dashboard":               "Overview",
-  "/dashboard/rooms":         "My Rooms",
-  "/dashboard/tasks":         "Tasks",
-  "/dashboard/wallet":        "Wallet",
-  "/dashboard/notifications": "Notifications",
+  "/dashboard":                             "Overview",
+  "/dashboard/rooms":                       "My Rooms",
+  "/dashboard/tasks":                       "Tasks",
+  "/dashboard/wallet":                      "Wallet",
+  "/dashboard/notifications":               "Notifications",
+  "/dashboard/profile":                     "My Profile",
+  "/dashboard/profile/activate-partner":    "Activate Partnership",
+  "/dashboard/partner":                     "Partner Monitor",
+  "/dashboard/admin":                       "Admin Panel",
 };
 
 export default function DashboardTopbar() {
   const pathname  = usePathname();
   const router    = useRouter();
-  const { profile, user, signOut } = useAuth();
+  const { profile, user, signOut, isSuperAdmin, isPartner } = useAuth();
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [unreadCount, setUnreadCount]   = useState(0);
 
@@ -117,12 +123,16 @@ export default function DashboardTopbar() {
               </AnimatePresence>
             </Link>
 
-            <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/profile"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              title="View profile"
+            >
               <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
                 {profile?.display_name?.[0]?.toUpperCase() ?? "U"}
               </div>
               <span className="hidden sm:block text-sm font-medium">{profile?.display_name ?? "User"}</span>
-            </div>
+            </Link>
           </div>
         </div>
       </header>
@@ -147,7 +157,16 @@ export default function DashboardTopbar() {
               </div>
 
               <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-                {navItems.map((item) => (
+                {[
+                  { label: "Overview",       href: "/dashboard",               icon: LayoutDashboard, exact: true, show: true },
+                  { label: "My Rooms",       href: "/dashboard/rooms",         icon: DoorOpen,        exact: false, show: true },
+                  { label: "Tasks",          href: "/dashboard/tasks",         icon: CheckSquare,     exact: false, show: true },
+                  { label: "Wallet",         href: "/dashboard/wallet",        icon: Wallet,          exact: false, show: true },
+                  { label: "Notifications",  href: "/dashboard/notifications", icon: Bell,            exact: false, show: true },
+                  { label: "Profile",        href: "/dashboard/profile",       icon: User,            exact: false, show: true },
+                  { label: "Partner Monitor",href: "/dashboard/partner",       icon: Building2,       exact: false, show: isPartner },
+                  { label: "Admin Panel",    href: "/dashboard/admin",         icon: Crown,           exact: false, show: isSuperAdmin },
+                ].filter((item) => item.show).map((item) => (
                   <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
                     className={cn(
                       "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",

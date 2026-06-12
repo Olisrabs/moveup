@@ -33,16 +33,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized user" }, { status: 401 });
     }
 
-    // 2. Verify Admin Status
+    // 2. Verify Super Admin Status
     const adminDb = createClient(supabaseUrl, supabaseServiceKey);
     const { data: userProfile, error: profileErr } = await adminDb
       .from("users")
-      .select("is_admin")
+      .select("is_admin, role")
       .eq("id", user.id)
       .single();
 
-    if (profileErr || !userProfile || !userProfile.is_admin) {
-      return NextResponse.json({ error: "Forbidden: Admin access only" }, { status: 403 });
+    if (profileErr || !userProfile || (!userProfile.is_admin && userProfile.role !== "super_admin")) {
+      return NextResponse.json({ error: "Forbidden: Super Admin access only" }, { status: 403 });
     }
 
     // 3. Find all users in rooms before deleting memberships
