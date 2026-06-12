@@ -57,7 +57,7 @@ export default function Signup() {
 
     // 3. If email confirmation is disabled, redirect immediately
     if (authData.session) {
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } else {
       // Email confirmation required — show success message
       setSuccess(true);

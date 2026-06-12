@@ -44,8 +44,8 @@ function LoginContent() {
       return;
     }
 
-    // Use replace so the back button doesn't return to /login
-    router.replace(nextPath);
+    // Use window.location.href to hard-reload and clear the client router cache
+    window.location.href = nextPath;
   };
 
 
