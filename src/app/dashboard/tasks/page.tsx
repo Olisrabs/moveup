@@ -45,9 +45,10 @@ export default function TasksPage() {
   const [proofType, setProofType] = useState<"text" | "link" | "image">("text");
   const [proofText, setProofText] = useState("");
   const [proofLink, setProofLink] = useState("");
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [proofFileBuffer, setProofFileBuffer] = useState<ArrayBuffer | null>(null);
-  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  // Multi-image state (1–4 images)
+  const [proofFiles, setProofFiles] = useState<File[]>([]);
+  const [proofFilePreviews, setProofFilePreviews] = useState<string[]>([]);
+  const [proofFileBuffers, setProofFileBuffers] = useState<(ArrayBuffer | null)[]>([]);
   const [proofExplanation, setProofExplanation] = useState("");
   const [submittingProof, setSubmittingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
@@ -215,42 +216,71 @@ export default function TasksPage() {
   const openProofModal = (task: Task) => {
     if (task.status === "completed") return;
     setProofTask(task); setProofType("text");
-    setProofText(""); setProofLink(""); setProofFile(null); setProofFileBuffer(null);
-    setProofPreview(null); setProofError(null); setProofExplanation("");
+    setProofText(""); setProofLink("");
+    setProofFiles([]); setProofFilePreviews([]); setProofFileBuffers([]);
+    setProofError(null); setProofExplanation("");
   };
 
+  const MAX_IMAGES = 4;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // 5 MB limit — mobile camera photos can be huge; keeps uploads reliable
-    if (file.size > 5 * 1024 * 1024) { setProofError("File must be under 5MB. Please compress or resize the image first."); return; }
-    setProofFile(file); setProofFileBuffer(null); setProofError(null);
+    const selected = Array.from(e.target.files ?? []);
+    if (!selected.length) return;
 
-    try {
-      // Create a local object URL for instant, memory-efficient preview
-      setProofPreview(URL.createObjectURL(file));
-    } catch (err) {
-      console.warn("Could not preview the selected image:", err);
+    // Reset input so the same file can be re-selected after removal
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    const remaining = MAX_IMAGES - proofFiles.length;
+    const toAdd = selected.slice(0, remaining);
+
+    const oversized = toAdd.find((f) => f.size > 5 * 1024 * 1024);
+    if (oversized) {
+      setProofError(`"${oversized.name}" exceeds 5 MB. Please compress it first.`);
+      return;
     }
+    setProofError(null);
 
-    // Eagerly read the file into memory right now, while the browser still
-    // holds a valid permission token for it. If we defer this to submit time
-    // the OS/browser may revoke file access (common on Android), causing a
-    // "permission problems" DOMException from arrayBuffer().
-    // We treat this as a non-blocking progressive enhancement: if FileReader fails,
-    // we'll gracefully fall back to direct file upload in handleProofSubmit.
-    const bufReader = new FileReader();
-    bufReader.onload = (bufEv) => setProofFileBuffer(bufEv.target?.result as ArrayBuffer);
-    bufReader.onerror = (err) => {
-      console.warn("Eager read failed. Will fallback to direct file upload.", err);
-    };
-    bufReader.readAsArrayBuffer(file);
+    // Create previews
+    const newPreviews = toAdd.map((f) => {
+      try { return URL.createObjectURL(f); } catch { return ""; }
+    });
+
+    // Eagerly read each file into an ArrayBuffer (Android permission guard)
+    const newBuffers: (ArrayBuffer | null)[] = new Array(toAdd.length).fill(null);
+    toAdd.forEach((f, i) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        newBuffers[i] = ev.target?.result as ArrayBuffer ?? null;
+        setProofFileBuffers((prev) => {
+          const next = [...prev];
+          next[proofFiles.length + i] = newBuffers[i];
+          return next;
+        });
+      };
+      reader.onerror = () => console.warn("Eager read failed for", f.name);
+      reader.readAsArrayBuffer(f);
+    });
+
+    setProofFiles((prev) => [...prev, ...toAdd]);
+    setProofFilePreviews((prev) => [...prev, ...newPreviews]);
+    setProofFileBuffers((prev) => [...prev, ...newBuffers]);
+  };
+
+  const removeProofImage = (index: number) => {
+    setProofFiles((prev) => prev.filter((_, i) => i !== index));
+    setProofFilePreviews((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+    setProofFileBuffers((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleProofSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !proofTask) return;
     setSubmittingProof(true); setProofError(null);
+    // Extra fields merged into the proof insert (populated per proof type below)
+    const proofInsertExtra: Record<string, unknown> = {};
 
     let contentUrl: string | null = null;
     let contentText: string | null = null;
@@ -264,49 +294,51 @@ export default function TasksPage() {
       contentUrl = proofLink.trim();
       contentText = proofExplanation.trim();
     } else {
-      if (!proofFile) { setProofError("Please select an image file."); setSubmittingProof(false); return; }
+      if (proofFiles.length === 0) { setProofError("Please select at least one image."); setSubmittingProof(false); return; }
       if (!proofExplanation.trim()) { setProofError("Please provide an explanation of what you did."); setSubmittingProof(false); return; }
 
-      try {
-        // Infer MIME type from extension when the browser (common on Android) returns an empty type
-        const inferMime = (file: File): string => {
-          if (file.type) return file.type;
-          const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-          const map: Record<string, string> = {
-            jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-            gif: "image/gif",  webp: "image/webp", heic: "image/heic",
-            heif: "image/heif", bmp: "image/bmp",
-          };
-          return map[ext] ?? "image/jpeg";
+      // Infer MIME type from extension when browser returns empty type (common on Android)
+      const inferMime = (file: File): string => {
+        if (file.type) return file.type;
+        const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+        const map: Record<string, string> = {
+          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+          gif: "image/gif", webp: "image/webp", heic: "image/heic",
+          heif: "image/heif", bmp: "image/bmp",
         };
+        return map[ext] ?? "image/jpeg";
+      };
 
-        const mimeType = inferMime(proofFile);
-        const sanitizedFileName = proofFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-        const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${sanitizedFileName}`;
+      try {
+        const uploadedUrls: string[] = [];
 
-        // Fallback: use pre-read buffer to create a Blob if available.
-        // Otherwise, upload the proofFile directly.
-        const typedBlob = proofFileBuffer
-          ? new Blob([proofFileBuffer], { type: mimeType })
-          : proofFile;
+        for (let i = 0; i < proofFiles.length; i++) {
+          const file = proofFiles[i];
+          const buf = proofFileBuffers[i];
+          const mimeType = inferMime(file);
+          const sanitized = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          const fileName = `${user.id}/${proofTask.id}/${Date.now()}-${i}-${sanitized}`;
+          const blob = buf ? new Blob([buf], { type: mimeType }) : file;
 
-        const { error: uploadErr } = await supabase.storage
-          .from("proofs")
-          .upload(fileName, typedBlob, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: mimeType,
-          });
+          const { error: uploadErr } = await supabase.storage
+            .from("proofs")
+            .upload(fileName, blob, { cacheControl: "3600", upsert: false, contentType: mimeType });
 
-        if (uploadErr) {
-          setProofError(`Upload failed: ${uploadErr.message}`);
-          setSubmittingProof(false);
-          return;
+          if (uploadErr) {
+            setProofError(`Upload failed for image ${i + 1}: ${uploadErr.message}`);
+            setSubmittingProof(false);
+            return;
+          }
+
+          const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
+          uploadedUrls.push(urlData.publicUrl);
         }
 
-        const { data: urlData } = supabase.storage.from("proofs").getPublicUrl(fileName);
-        contentUrl = urlData.publicUrl;
+        contentUrl = uploadedUrls[0];          // backward-compat: primary URL
         contentText = proofExplanation.trim();
+
+        // Store all URLs in content_urls (set via the insert below)
+        Object.assign(proofInsertExtra, { content_urls: uploadedUrls });
       } catch (uploadException) {
         const msg = uploadException instanceof Error ? uploadException.message : "Unknown error";
         setProofError(`Image upload error: ${msg}. Please try a smaller image or use a different format.`);
@@ -319,6 +351,7 @@ export default function TasksPage() {
       task_id: proofTask.id, room_id: proofTask.room_id,
       user_id: user.id, content_type: proofType,
       content_url: contentUrl, content_text: contentText,
+      ...proofInsertExtra,
     });
     if (proofErr) { setProofError(proofErr.message); setSubmittingProof(false); return; }
 
@@ -345,6 +378,9 @@ export default function TasksPage() {
     }
 
     setTasks((prev) => prev.map((t) => t.id === proofTask.id ? { ...t, status: "completed", last_completed_at: nowStr } : t));
+    // Clean up object URLs to free memory
+    proofFilePreviews.forEach((url) => URL.revokeObjectURL(url));
+    setProofFiles([]); setProofFilePreviews([]); setProofFileBuffers([]);
     setProofTask(null); setSubmittingProof(false);
   };
 
@@ -692,23 +728,64 @@ export default function TasksPage() {
                   )}
                   {proofType === "image" && (
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Upload Image *</label>
-                      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-                      {proofPreview ? (
-                        <div className="relative">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={proofPreview} alt="Proof preview" className="w-full h-48 object-cover rounded-xl border border-border" />
-                          <button type="button" onClick={() => { setProofFile(null); setProofFileBuffer(null); setProofPreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                            className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-lg text-white hover:bg-black/80">
-                            <X size={14} />
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Upload Images * <span className="text-muted-foreground font-normal">({proofFiles.length}/{MAX_IMAGES})</span></label>
+                        {proofFiles.length > 0 && proofFiles.length < MAX_IMAGES && (
+                          <button type="button" onClick={() => fileInputRef.current?.click()}
+                            className="text-xs text-primary hover:underline flex items-center gap-1">
+                            <Plus size={12} /> Add more
                           </button>
+                        )}
+                      </div>
+                      {/* Hidden file input — multiple allowed */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleFileChange}
+                      />
+                      {proofFilePreviews.length > 0 ? (
+                        <div className={`grid gap-2 ${proofFilePreviews.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                          {proofFilePreviews.map((src, idx) => (
+                            <div key={idx} className="relative group">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={src}
+                                alt={`Proof ${idx + 1}`}
+                                className="w-full h-32 object-cover rounded-xl border border-border"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeProofImage(idx)}
+                                className="absolute top-1.5 right-1.5 p-1 bg-black/60 rounded-lg text-white hover:bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <X size={12} />
+                              </button>
+                              <span className="absolute bottom-1.5 left-1.5 text-[10px] bg-black/50 text-white px-1.5 py-0.5 rounded">
+                                {idx + 1}
+                              </span>
+                            </div>
+                          ))}
+                          {/* Add slot if under limit */}
+                          {proofFiles.length < MAX_IMAGES && (
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="h-32 border-2 border-dashed border-border hover:border-primary/50 active:border-primary rounded-xl flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              <Plus size={20} />
+                              <span className="text-xs">Add image</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <button type="button" onClick={() => fileInputRef.current?.click()}
                           className="w-full h-44 border-2 border-dashed border-border hover:border-primary/50 active:border-primary rounded-xl flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary transition-colors">
                           <ImageIcon size={32} />
-                          <span className="text-sm font-medium">Tap to select image</span>
-                          <span className="text-xs">JPG, PNG, WEBP &bull; Max 5MB</span>
+                          <span className="text-sm font-medium">Tap to select images</span>
+                          <span className="text-xs">JPG, PNG, WEBP &bull; Max 5MB each &bull; Up to 4 images</span>
                         </button>
                       )}
                     </div>
@@ -726,7 +803,7 @@ export default function TasksPage() {
                   <button type="submit" disabled={submittingProof}
                     className="w-full flex items-center justify-center gap-2 bg-accent text-white py-3 rounded-xl font-semibold hover:bg-accent/90 transition-all disabled:opacity-70">
                     {submittingProof
-                      ? <><Loader2 size={18} className="animate-spin" /> {proofType === "image" ? "Uploading image…" : "Submitting…"}</>
+                      ? <><Loader2 size={18} className="animate-spin" /> {proofType === "image" ? `Uploading ${proofFiles.length > 1 ? "images" : "image"}…` : "Submitting…"}</>
                       : <><Check size={16} /> Mark as Complete</>}
                   </button>
                 </form>

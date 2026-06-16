@@ -103,7 +103,10 @@ export type Proof = {
   room_id: string;
   user_id: string;
   content_type: 'text' | 'link' | 'image' | 'video' | 'document';
+  /** Primary/first image URL (kept for backward-compat) */
   content_url: string | null;
+  /** Ordered array of up to 4 image URLs (image proofs only) */
+  content_urls: string[] | null;
   content_text: string | null;
   created_at: string;
 };
