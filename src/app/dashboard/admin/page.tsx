@@ -18,6 +18,9 @@ import {
   Calendar,
   UserMinus,
   ShieldAlert,
+  Pencil,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type PartnershipCode } from "@/lib/supabase";
@@ -53,6 +56,15 @@ export default function AdminPanelPage() {
   const [codes, setCodes] = useState<PartnershipCode[]>([]);
   const [loadingCodes, setLoadingCodes] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Edit code modal
+  const [editCode, setEditCode] = useState<PartnershipCode | null>(null);
+  const [editBusiness, setEditBusiness] = useState("");
+  const [editDuration, setEditDuration] = useState("365");
+  const [editExpires, setEditExpires] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Promote admin
   const [promoteEmail, setPromoteEmail] = useState("");
@@ -147,6 +159,63 @@ export default function AdminPanelPage() {
       setCodes((prev) => prev.map((c) => c.id === codeId ? { ...c, is_active: !currentActive } : c));
     }
     setTogglingId(null);
+  };
+
+  const openEditModal = (code: PartnershipCode) => {
+    setEditCode(code);
+    setEditBusiness(code.business_name);
+    setEditDuration(String(code.duration_days));
+    // Format the date as YYYY-MM-DD for the date input
+    setEditExpires(new Date(code.expires_at).toISOString().split("T")[0]);
+    setEditError(null);
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editCode) return;
+    setSaving(true);
+    setEditError(null);
+    const token = await getToken();
+    const res = await fetch(`/api/super-admin/codes/${editCode.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        businessName: editBusiness,
+        durationDays: Number(editDuration),
+        expiresAt: editExpires,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setCodes((prev) =>
+        prev.map((c) =>
+          c.id === editCode.id
+            ? { ...c, business_name: editBusiness, duration_days: Number(editDuration), expires_at: new Date(editExpires).toISOString() }
+            : c
+        )
+      );
+      setEditCode(null);
+    } else {
+      setEditError(data.error ?? "Failed to update code");
+    }
+    setSaving(false);
+  };
+
+  const handleDeleteCode = async (code: PartnershipCode) => {
+    const warning = code.used_by
+      ? `This code was redeemed. Deleting it will revoke "${code.business_name}"'s partner access. Continue?`
+      : `Delete the code for "${code.business_name}"? This cannot be undone.`;
+    if (!confirm(warning)) return;
+    setDeletingId(code.id);
+    const token = await getToken();
+    const res = await fetch(`/api/super-admin/codes/${code.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      setCodes((prev) => prev.filter((c) => c.id !== code.id));
+    }
+    setDeletingId(null);
   };
 
   const handlePromote = async (e: React.FormEvent) => {
@@ -342,6 +411,15 @@ export default function AdminPanelPage() {
                       title="Copy code">
                       <Copy size={14} />
                     </button>
+                    {/* Edit */}
+                    <button
+                      onClick={() => openEditModal(code)}
+                      className="p-2 rounded-lg bg-secondary hover:bg-blue-500/20 text-muted-foreground hover:text-blue-400 transition-colors"
+                      title="Edit code"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    {/* Toggle */}
                     <button
                       onClick={() => handleToggleCode(code.id, code.is_active)}
                       disabled={togglingId === code.id}
@@ -356,6 +434,17 @@ export default function AdminPanelPage() {
                         : code.is_active ? <ToggleRight size={14} /> : <ToggleLeft size={14} />
                       }
                       {code.is_active ? "Disable" : "Enable"}
+                    </button>
+                    {/* Delete */}
+                    <button
+                      onClick={() => handleDeleteCode(code)}
+                      disabled={deletingId === code.id}
+                      className="p-2 rounded-lg bg-secondary hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                      title="Delete code"
+                    >
+                      {deletingId === code.id
+                        ? <Loader2 size={14} className="animate-spin" />
+                        : <Trash2 size={14} />}
                     </button>
                   </div>
                 </div>
@@ -471,6 +560,115 @@ export default function AdminPanelPage() {
           )}
         </div>
       </motion.div>
+      {/* Edit Partnership Code Modal */}
+      {editCode && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            onClick={() => !saving && setEditCode(null)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              className="bg-card border border-border rounded-3xl p-7 w-full max-w-md shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                    <Pencil size={15} className="text-blue-400" />
+                  </div>
+                  <h3 className="text-lg font-bold">Edit Partnership Code</h3>
+                </div>
+                <button
+                  onClick={() => !saving && setEditCode(null)}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <p className="text-xs text-muted-foreground mb-5 font-mono">{editCode.code}</p>
+
+              {editError && (
+                <div className="mb-4 flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                  <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-400">{editError}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleEditSave} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Business Name</label>
+                  <div className="relative">
+                    <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      required
+                      value={editBusiness}
+                      onChange={(e) => setEditBusiness(e.target.value)}
+                      className="w-full bg-secondary/50 border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      placeholder="Tech Academy Ltd"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Duration (Days)</label>
+                  <div className="relative">
+                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={1825}
+                      value={editDuration}
+                      onChange={(e) => setEditDuration(e.target.value)}
+                      className="w-full bg-secondary/50 border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Expiry Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editExpires}
+                    onChange={(e) => setEditExpires(e.target.value)}
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                  />
+                </div>
+
+                {editCode.used_by && (
+                  <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+                    ⚠️ This code is already redeemed. Saving will update the partner&apos;s business name and expiry too.
+                  </p>
+                )}
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditCode(null)}
+                    disabled={saving}
+                    className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-secondary/50 transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || !editBusiness.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    {saving ? "Saving…" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
