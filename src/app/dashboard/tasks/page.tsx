@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckSquare, Clock, Plus, Check, X, Loader2,
-  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil, Lock, Repeat, RefreshCw,
+  Upload, Link as LinkIcon, FileText, ImageIcon, Shield, Pencil, Lock, Repeat, RefreshCw, Trash2,
 } from "lucide-react";
 
 /** Returns true if the task was created less than 30 minutes ago. */
@@ -39,6 +39,10 @@ export default function TasksPage() {
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editExpiredToast, setEditExpiredToast] = useState(false);
+
+  // Delete task
+  const [deleteTask, setDeleteTask] = useState<Task | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Proof modal
   const [proofTask, setProofTask] = useState<Task | null>(null);
@@ -390,6 +394,17 @@ export default function TasksPage() {
     await supabase.from("tasks").update({ is_recurring: newStatus }).eq("id", task.id);
   };
 
+  const handleDeleteTask = async () => {
+    if (!deleteTask) return;
+    setDeleting(true);
+    // Delete associated proofs first (FK constraint), then the task
+    await supabase.from("proofs").delete().eq("task_id", deleteTask.id);
+    await supabase.from("tasks").delete().eq("id", deleteTask.id);
+    setTasks(prev => prev.filter(t => t.id !== deleteTask.id));
+    setDeleteTask(null);
+    setDeleting(false);
+  };
+
   const pending = tasks.filter((t) => t.status === "pending");
   const completed = tasks.filter((t) => t.status === "completed");
   const inputClass = "w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all";
@@ -473,6 +488,10 @@ export default function TasksPage() {
             </button>
             </>
           )}
+          <button onClick={() => setDeleteTask(task)} title="Delete task"
+            className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-all">
+            <Trash2 size={14} />
+          </button>
         </div>
       </motion.div>
     );
@@ -807,6 +826,49 @@ export default function TasksPage() {
                       : <><Check size={16} /> Mark as Complete</>}
                   </button>
                 </form>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteTask && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => !deleting && setDeleteTask(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-sm shadow-2xl">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
+                    <Trash2 size={18} className="text-red-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold">Delete Task?</h3>
+                    <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mb-6">
+                  You are about to permanently delete{" "}
+                  <span className="font-semibold text-foreground">&quot;{deleteTask.title}&quot;</span>{" "}
+                  and all its associated proof submissions.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setDeleteTask(null)}
+                    disabled={deleting}
+                    className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-all disabled:opacity-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteTask}
+                    disabled={deleting}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition-all disabled:opacity-70 flex items-center justify-center gap-2">
+                    {deleting ? <Loader2 size={16} className="animate-spin" /> : <><Trash2 size={14} /> Delete</>}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>
