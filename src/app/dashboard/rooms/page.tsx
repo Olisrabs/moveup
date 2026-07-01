@@ -340,60 +340,46 @@ export default function RoomsPage() {
   const distributePrizes = async () => {
     if (!selectedRoom || !user) return;
     setDistributing(true); setDistributeError(null);
-    // Re-fetch leaderboard
-    const { data: members } = await supabase.from("room_members").select("user_id, room_display_name, users(display_name)").eq("room_id", selectedRoom.id);
-    if (!members || members.length === 0) { setDistributeError("No members found."); setDistributing(false); return; }
-    const entries = await Promise.all(members.map(async (m) => {
-      const [{ count: pendingCount }, { count: proofCount }] = await Promise.all([
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id).eq("status", "pending"),
-        supabase.from("proofs").select("*", { count: "exact", head: true }).eq("room_id", selectedRoom.id).eq("user_id", m.user_id),
-      ]);
-      const done = proofCount ?? 0;
-      const total = done + (pendingCount ?? 0);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ud = m.users as any;
-      return { user_id: m.user_id, display_name: ud?.display_name || m.room_display_name || "Unknown", total, done, pct: total > 0 ? done / total : 0 };
-    }));
-    entries.sort((a, b) => b.pct - a.pct || b.done - a.done);
-    const totalPool = Number(selectedRoom.commitment_fee) * selectedRoom.member_count;
-    const prizeTypes: Array<'prize_1st' | 'prize_2nd' | 'prize_3rd'> = ['prize_1st', 'prize_2nd', 'prize_3rd'];
-    const prizeLabels = ['1st place', '2nd place', '3rd place'];
-    // If fewer than 4 members, only 1st gets everything
-    const splits = selectedRoom.member_count < 4 ? [1, 0, 0] : [0.5, 0.3, 0.2];
-    const notifications: { user_id: string; message: string; is_read: boolean; type: string; room_id: string }[] = [];
-    for (let i = 0; i < Math.min(entries.length, 3); i++) {
-      const pct = splits[i];
-      if (pct === 0) continue;
-      const prize = totalPool * pct;
-      const { data: ub } = await supabase.from("users").select("balance").eq("id", entries[i].user_id).single();
-      const newBal = Number(ub?.balance ?? 0) + prize;
-      await supabase.from("users").update({ balance: newBal }).eq("id", entries[i].user_id);
-      await supabase.from("wallet_transactions").insert({
-        user_id: entries[i].user_id, amount: prize, type: prizeTypes[i],
-        description: `${prizeLabels[i]} prize from room "${selectedRoom.name}" — ${formatNaira(prize)}`,
-      });
-      notifications.push({
-        user_id: entries[i].user_id, room_id: selectedRoom.id,
-        message: `🏆 You finished ${prizeLabels[i]} in "${selectedRoom.name}"! ${formatNaira(prize)} has been credited to your wallet.`,
-        is_read: false, type: "prize_credit",
-      });
-    }
-    // Notify all other members
-    for (const m of members) {
-      if (!entries.slice(0, 3).find(e => e.user_id === m.user_id)) {
-        notifications.push({
-          user_id: m.user_id, room_id: selectedRoom.id,
-          message: `🏁 The room "${selectedRoom.name}" has ended. Prizes have been distributed to the top performers.`,
-          is_read: false, type: "room_ended",
-        });
+    setDistributeSuccess(false);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setDistributeError("Authentication token expired. Please reload.");
+        setDistributing(false);
+        return;
       }
+
+      const res = await fetch("/api/rooms/distribute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ roomId: selectedRoom.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setDistributeError(data.error || "Failed to distribute prizes.");
+        setDistributing(false);
+        return;
+      }
+
+      await refreshProfile();
+      setDistributeSuccess(true);
+      setTimeout(() => {
+        setDistributeSuccess(false);
+        setSelectedRoom(null);
+        backToLeaderboard();
+        fetchRooms();
+      }, 2000);
+    } catch (err: any) {
+      setDistributeError(err?.message || "An unexpected error occurred.");
+    } finally {
+      setDistributing(false);
     }
-    if (notifications.length > 0) await supabase.from("notifications").insert(notifications);
-    await supabase.from("rooms").update({ prize_distributed: true, status: "completed" }).eq("id", selectedRoom.id);
-    await refreshProfile();
-    setDistributeSuccess(true);
-    setTimeout(() => { setDistributeSuccess(false); setSelectedRoom(null); backToLeaderboard(); fetchRooms(); }, 2000);
-    setDistributing(false);
   };
 
   const handleDeleteRoom = async () => {
