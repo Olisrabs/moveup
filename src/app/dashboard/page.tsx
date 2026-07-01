@@ -47,8 +47,15 @@ export default function DashboardOverview() {
         .eq("user_id", user.id);
 
       const roomIds = (memberRooms ?? []).map((m) => m.room_id);
+      let allMemberRooms: { id: string; status: string; prize_distributed: boolean }[] = [];
 
       if (roomIds.length > 0) {
+        const { data: allRooms } = await supabase
+          .from("rooms")
+          .select("id, status, prize_distributed")
+          .in("id", roomIds);
+        allMemberRooms = (allRooms ?? []) as any;
+
         const { data: roomData } = await supabase
           .from("rooms")
           .select("*")
@@ -84,7 +91,10 @@ export default function DashboardOverview() {
 
       const todayStr = new Date().toISOString().split("T")[0];
       const processedTasks = (taskData ?? []).map(t => {
-        if (t.is_recurring && t.status === "completed") {
+        const room = allMemberRooms.find((r) => r.id === t.room_id);
+        const isRoomCompleted = room?.status === "completed" || room?.prize_distributed === true;
+
+        if (t.is_recurring && t.status === "completed" && !isRoomCompleted) {
           const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
           if (completedDate !== todayStr) {
             // Lazily update DB in background

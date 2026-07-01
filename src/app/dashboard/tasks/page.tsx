@@ -65,9 +65,23 @@ export default function TasksPage() {
       supabase.from("room_members").select("room_id").eq("user_id", user.id),
     ]);
 
+    const roomIds = (memberRooms ?? []).map((m) => m.room_id);
+    let loadedRooms: any[] = [];
+    if (roomIds.length > 0) {
+      const { data: roomData } = await supabase
+        .from("rooms")
+        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at, prize_distributed, last_reminder_at")
+        .in("id", roomIds);
+      loadedRooms = roomData ?? [];
+      setRooms(loadedRooms);
+    }
+
     const todayStr = new Date().toISOString().split("T")[0];
     const processedTasks = (taskData ?? []).map(t => {
-      if (t.is_recurring && t.status === "completed") {
+      const room = loadedRooms.find((r) => r.id === t.room_id);
+      const isRoomCompleted = room?.status === "completed" || room?.prize_distributed === true;
+
+      if (t.is_recurring && t.status === "completed" && !isRoomCompleted) {
         const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
         if (completedDate !== todayStr) {
           supabase.from("tasks").update({ status: "pending" }).eq("id", t.id).then();
@@ -78,14 +92,6 @@ export default function TasksPage() {
     });
 
     setTasks(processedTasks);
-    const roomIds = (memberRooms ?? []).map((m) => m.room_id);
-    if (roomIds.length > 0) {
-      const { data: roomData } = await supabase
-        .from("rooms")
-        .select("id, name, code, description, duration_days, commitment_fee, max_members, created_by, status, created_at, ends_at, prize_distributed, last_reminder_at")
-        .in("id", roomIds).eq("status", "active");
-      setRooms(roomData ?? []);
-    }
     setLoading(false);
   };
 
@@ -204,6 +210,12 @@ export default function TasksPage() {
     e.preventDefault();
     if (!user) return;
     setAdding(true); setAddError(null);
+    const roomObj = rooms.find((r) => r.id === form.room_id);
+    if (roomObj && (roomObj.status === "completed" || roomObj.prize_distributed)) {
+      setAddError("This room has been completed. You cannot add tasks to it.");
+      setAdding(false);
+      return;
+    }
     const { error } = await supabase.from("tasks").insert({
       title: form.title, description: form.description || null,
       room_id: form.room_id, user_id: user.id,
@@ -219,6 +231,10 @@ export default function TasksPage() {
 
   const openProofModal = (task: Task) => {
     if (task.status === "completed") return;
+    const room = rooms.find((r) => r.id === task.room_id);
+    if (room && (room.status === "completed" || room.prize_distributed)) {
+      return;
+    }
     setProofTask(task); setProofType("text");
     setProofText(""); setProofLink("");
     setProofFiles([]); setProofFilePreviews([]); setProofFileBuffers([]);
@@ -283,6 +299,13 @@ export default function TasksPage() {
     e.preventDefault();
     if (!user || !proofTask) return;
     setSubmittingProof(true); setProofError(null);
+
+    const room = rooms.find((r) => r.id === proofTask.room_id);
+    if (room && (room.status === "completed" || room.prize_distributed)) {
+      setProofError("This room has been completed. Proof submissions are closed.");
+      setSubmittingProof(false);
+      return;
+    }
     // Extra fields merged into the proof insert (populated per proof type below)
     const proofInsertExtra: Record<string, unknown> = {};
 
@@ -412,7 +435,8 @@ export default function TasksPage() {
   const TaskCard = ({ task }: { task: Task }) => {
     const room = rooms.find((r) => r.id === task.room_id);
     const isDone = task.status === "completed";
-    const canEdit = !isDone && isTaskEditable(task);
+    const isRoomCompleted = room?.status === "completed" || room?.prize_distributed === true;
+    const canEdit = !isDone && !isRoomCompleted && isTaskEditable(task);
     const minsLeft = editMinutesLeft(task);
 
     const formatTime = (t: string) => {
@@ -425,10 +449,11 @@ export default function TasksPage() {
       <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
         className={`glass-card rounded-2xl p-5 flex items-start gap-4 group transition-all ${isDone ? "opacity-60" : ""}`}>
-        <button onClick={() => !isDone && openProofModal(task)}
-          title={isDone ? "Completed" : "Submit proof to complete"}
-          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${isDone ? "bg-accent border-accent cursor-default" : "border-border hover:border-primary cursor-pointer"}`}>
+        <button onClick={() => !isDone && !isRoomCompleted && openProofModal(task)}
+          title={isDone ? "Completed" : isRoomCompleted ? "Room completed — submissions closed" : "Submit proof to complete"}
+          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${isDone ? "bg-accent border-accent cursor-default" : isRoomCompleted ? "border-border/50 text-muted-foreground/50 cursor-not-allowed opacity-55" : "border-border hover:border-primary cursor-pointer"}`}>
           {isDone && <Check size={13} className="text-white" />}
+          {!isDone && isRoomCompleted && <Lock size={10} className="text-muted-foreground" />}
         </button>
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>{task.title}</p>
@@ -482,10 +507,12 @@ export default function TasksPage() {
                 <Lock size={14} />
               </button>
             )}
-            <button onClick={() => openProofModal(task)} title="Submit proof"
-              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
-              <Upload size={15} />
-            </button>
+            {!isRoomCompleted && (
+              <button onClick={() => openProofModal(task)} title="Submit proof"
+                className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all">
+                <Upload size={15} />
+              </button>
+            )}
             </>
           )}
           <button onClick={() => setDeleteTask(task)} title="Delete task"
@@ -606,7 +633,7 @@ export default function TasksPage() {
                     <select required className={inputClass} value={form.room_id}
                       onChange={(e) => setForm({ ...form, room_id: e.target.value })}>
                       <option value="">Select a room</option>
-                      {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      {rooms.filter(r => r.status !== 'completed' && !r.prize_distributed).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
