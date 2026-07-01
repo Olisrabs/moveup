@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     // 1. Verify user has sufficient balance
     const { data: userRow, error: fetchErr } = await adminDb
       .from("users")
-      .select("balance")
+      .select("balance, display_name, email")
       .eq("id", userId)
       .single();
 
@@ -89,13 +89,73 @@ export async function POST(req: NextRequest) {
       description: `Withdrawal request pending review: ₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })} to ${bankName} (${accountNumber})`,
     });
 
-    // 5. Notify user
+    // 5. Notify user in-app
     await adminDb.from("notifications").insert({
       user_id: userId,
       message: `⏳ Withdrawal of ₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })} has been requested. Status: Pending Review (24 Hours expected).`,
       is_read: false,
       type: "withdrawal_pending",
     });
+
+    // 6. Send email notification to Admin if SMTP configured
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    if (smtpHost && smtpUser && smtpPass) {
+      try {
+        const nodemailer = (await import("nodemailer")) as any;
+        const transporter = nodemailer.default.createTransport({
+          host: smtpHost,
+          port: parseInt(process.env.SMTP_PORT || "587"),
+          secure: process.env.SMTP_SECURE === "true",
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+
+        const requesterName = userRow.display_name || "A user";
+        const requesterEmail = userRow.email || "No email provided";
+
+        await transporter.sendMail({
+          from: `"MoveUp Platform" <${smtpUser}>`,
+          to: smtpUser,
+          subject: `💸 New Withdrawal Request: ₦${amount.toLocaleString("en-NG")} by ${requesterName}`,
+          html: `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+              <h2 style="color:#2563eb;text-align:center;margin-top:0;">New Withdrawal Request</h2>
+              <p>Hello Admin,</p>
+              <p>A new manual withdrawal request has been submitted and is pending review:</p>
+              <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">User:</td>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requesterName} (${requesterEmail})</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Amount:</td>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#2563eb;font-weight:bold;">₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Bank:</td>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;">${bankName}</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Account Number:</td>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;">${accountNumber}</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Account Name:</td>
+                  <td style="padding:8px;border-bottom:1px solid #eaeaea;">${accountName}</td>
+                </tr>
+              </table>
+              <p>You can process this request by logging into the Admin Dashboard.</p>
+              <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;" />
+              <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-bottom:0;">MoveUp Platform &copy; ${new Date().getFullYear()}</p>
+            </div>
+          `,
+        });
+      } catch (emailErr) {
+        console.error("Failed to send admin withdrawal request email:", emailErr);
+      }
+    }
 
     return NextResponse.json({
       success: true,

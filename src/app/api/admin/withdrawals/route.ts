@@ -113,6 +113,112 @@ export async function POST(req: NextRequest) {
         type: "withdrawal_completed",
       });
 
+      // Send email notifications to both user and admin if SMTP is configured
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+
+      if (smtpHost && smtpUser && smtpPass) {
+        try {
+          const { data: userRow } = await adminDb
+            .from("users")
+            .select("display_name, email")
+            .eq("id", requestUser)
+            .single();
+
+          if (userRow && userRow.email) {
+            const nodemailer = (await import("nodemailer")) as any;
+            const transporter = nodemailer.default.createTransport({
+              host: smtpHost,
+              port: parseInt(process.env.SMTP_PORT || "587"),
+              secure: process.env.SMTP_SECURE === "true",
+              auth: { user: smtpUser, pass: smtpPass },
+            });
+
+            const recipientName = userRow.display_name || "User";
+            const emailHtml = `
+              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+                <div style="text-align:center;margin-bottom:20px;">
+                  <span style="font-size:40px;">✅</span>
+                </div>
+                <h2 style="color:#16a34a;text-align:center;margin-top:0;">Withdrawal Completed</h2>
+                <p>Hello ${recipientName},</p>
+                <p>Your withdrawal request has been reviewed and successfully processed. The funds have been sent to your bank account:</p>
+                <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">Amount:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#16a34a;font-weight:bold;">₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Bank:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.bank_name}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Account Number:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.account_number}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Account Name:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.account_name || "Provided Account"}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Status:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#16a34a;font-weight:bold;">Completed</td>
+                  </tr>
+                </table>
+                <p>If you do not receive the credit in your bank account within 24 hours, please contact support.</p>
+                <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;" />
+                <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-bottom:0;">MoveUp Platform &copy; ${new Date().getFullYear()}</p>
+              </div>
+            `;
+
+            // 1. Send to User
+            await transporter.sendMail({
+              from: `"MoveUp Platform" <${smtpUser}>`,
+              to: userRow.email,
+              subject: `✅ Withdrawal Completed: ₦${amount.toLocaleString("en-NG")}`,
+              html: emailHtml,
+            });
+
+            // 2. Send to Admin
+            await transporter.sendMail({
+              from: `"MoveUp Platform" <${smtpUser}>`,
+              to: smtpUser,
+              subject: `✅ Withdrawal Completed Notification: ₦${amount.toLocaleString("en-NG")} to ${recipientName}`,
+              html: `
+                <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+                  <h2 style="color:#16a34a;text-align:center;margin-top:0;">Withdrawal Processed</h2>
+                  <p>Hello Admin,</p>
+                  <p>The following withdrawal request has been marked as <strong>Completed</strong> and the user has been notified:</p>
+                  <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">User:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;">${recipientName} (${userRow.email})</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Amount:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#16a34a;font-weight:bold;">₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Bank:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.bank_name}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Account Number:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.account_number}</td>
+                    </tr>
+                  </table>
+                  <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;" />
+                  <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-bottom:0;">MoveUp Platform &copy; ${new Date().getFullYear()}</p>
+                </div>
+              `,
+            });
+          }
+        } catch (emailErr) {
+          console.error("Failed to send withdrawal completion emails:", emailErr);
+        }
+      }
+
     } else if (action === "reject") {
       // 3. Mark request as rejected
       await adminDb
@@ -151,6 +257,100 @@ export async function POST(req: NextRequest) {
         is_read: false,
         type: "withdrawal_rejected",
       });
+
+      // Send email notifications to both user and admin if SMTP is configured
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+
+      if (smtpHost && smtpUser && smtpPass) {
+        try {
+          const { data: userRow } = await adminDb
+            .from("users")
+            .select("display_name, email")
+            .eq("id", requestUser)
+            .single();
+
+          if (userRow && userRow.email) {
+            const nodemailer = (await import("nodemailer")) as any;
+            const transporter = nodemailer.default.createTransport({
+              host: smtpHost,
+              port: parseInt(process.env.SMTP_PORT || "587"),
+              secure: process.env.SMTP_SECURE === "true",
+              auth: { user: smtpUser, pass: smtpPass },
+            });
+
+            const recipientName = userRow.display_name || "User";
+            const emailHtml = `
+              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+                <div style="text-align:center;margin-bottom:20px;">
+                  <span style="font-size:40px;">❌</span>
+                </div>
+                <h2 style="color:#dc2626;text-align:center;margin-top:0;">Withdrawal Rejected</h2>
+                <p>Hello ${recipientName},</p>
+                <p>Your withdrawal request has been declined. The full amount has been refunded back to your MoveUp wallet balance:</p>
+                <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">Amount:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#dc2626;font-weight:bold;">₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">Bank Account:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.bank_name} (${requestRow.account_number})</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Status:</td>
+                    <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#dc2626;font-weight:bold;">Rejected & Refunded</td>
+                  </tr>
+                </table>
+                <p>Please check your MoveUp dashboard wallet to verify your updated balance. If you have any questions, please contact support.</p>
+                <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;" />
+                <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-bottom:0;">MoveUp Platform &copy; ${new Date().getFullYear()}</p>
+              </div>
+            `;
+
+            // 1. Send to User
+            await transporter.sendMail({
+              from: `"MoveUp Platform" <${smtpUser}>`,
+              to: userRow.email,
+              subject: `❌ Withdrawal Declined & Refunded: ₦${amount.toLocaleString("en-NG")}`,
+              html: emailHtml,
+            });
+
+            // 2. Send to Admin
+            await transporter.sendMail({
+              from: `"MoveUp Platform" <${smtpUser}>`,
+              to: smtpUser,
+              subject: `❌ Withdrawal Rejected Notification: ₦${amount.toLocaleString("en-NG")} to ${recipientName}`,
+              html: `
+                <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eaeaea;border-radius:8px;">
+                  <h2 style="color:#dc2626;text-align:center;margin-top:0;">Withdrawal Rejected & Refunded</h2>
+                  <p>Hello Admin,</p>
+                  <p>The following withdrawal request has been marked as <strong>Rejected</strong> and the funds have been refunded to the user's wallet:</p>
+                  <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;width:150px;">User:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;">${recipientName} (${userRow.email})</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Refunded Amount:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;color:#dc2626;font-weight:bold;">₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;font-weight:bold;">Target Bank:</td>
+                      <td style="padding:8px;border-bottom:1px solid #eaeaea;">${requestRow.bank_name} (${requestRow.account_number})</td>
+                    </tr>
+                  </table>
+                  <hr style="border:0;border-top:1px solid #eaeaea;margin:20px 0;" />
+                  <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-bottom:0;">MoveUp Platform &copy; ${new Date().getFullYear()}</p>
+                </div>
+              `,
+            });
+          }
+        } catch (emailErr) {
+          console.error("Failed to send withdrawal rejection emails:", emailErr);
+        }
+      }
     }
 
     return NextResponse.json({ success: true });
