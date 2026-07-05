@@ -18,6 +18,10 @@ import {
   BadgeCheck,
   LogOut,
   UserMinus,
+  Smartphone,
+  Download,
+  Share,
+  PlusSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type StaffInvitation } from "@/lib/supabase";
@@ -34,6 +38,12 @@ export default function ProfilePage() {
   const { user, profile, refreshProfile, isSuperAdmin, isPartner, isObserver, signOut } = useAuth();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // PWA States
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false);
 
   // Edit state
   const [displayName, setDisplayName] = useState("");
@@ -173,6 +183,61 @@ export default function ProfilePage() {
       alert(data.error ?? "Failed to remove staff");
     }
     setRemovingId(null);
+  };
+
+  useEffect(() => {
+    // 1. Detect standalone
+    const isStandaloneMode = 
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true ||
+      document.referrer.includes("android-app://");
+    
+    setIsStandalone(isStandaloneMode);
+
+    // 2. Detect iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isAppleDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isAppleDevice);
+
+    // 3. Get global prompt if available
+    if ((window as any).deferredPrompt) {
+      setDeferredPrompt((window as any).deferredPrompt);
+    }
+
+    // 4. Listen for prompt event
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    // 5. Listen for appinstalled
+    const handleAppInstalled = () => {
+      setIsStandalone(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  const handlePWAInstall = async () => {
+    const prompt = deferredPrompt || (window as any).deferredPrompt;
+    if (prompt) {
+      prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      console.log("Install outcome:", outcome);
+      if (outcome === "accepted") {
+        setDeferredPrompt(null);
+        (window as any).deferredPrompt = null;
+        setIsStandalone(true);
+      }
+    } else {
+      alert("Installation is supported via your browser menu. Please tap the menu button (usually three dots ⋮ at the top right) and select 'Install app' or 'Add to Home screen'.");
+    }
   };
 
   if (!profile) return null;
@@ -446,8 +511,77 @@ export default function ProfilePage() {
         </motion.div>
       )}
 
-      {/* Logout */}
+      {/* Mobile Web App Download Settings */}
       <motion.div custom={6} variants={fadeUp} initial="hidden" animate="show"
+        className="glass-card rounded-2xl p-6 border border-indigo-500/20 bg-slate-900/40">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-indigo-500/20 text-indigo-400 p-2.5 rounded-xl">
+              <Smartphone size={20} />
+            </div>
+            <div>
+              <h2 className="font-semibold text-lg">MoveUp Web App</h2>
+              <p className="text-xs text-muted-foreground">Install the application on your phone or desktop.</p>
+            </div>
+          </div>
+        </div>
+
+        {isStandalone ? (
+          <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-emerald-400">
+            <BadgeCheck size={20} className="shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">Application Installed</p>
+              <p className="text-xs text-emerald-500/80">You are currently running the official standalone MoveUp app.</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Get the native app experience directly on your device. Enjoy fullscreen browsing, faster load speeds, and easier access from your home screen.
+            </p>
+            {isIOS ? (
+              <div className="space-y-3">
+                <button
+                  onClick={() => setShowIOSInstructions(!showIOSInstructions)}
+                  className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                >
+                  <Download size={14} />
+                  {showIOSInstructions ? "Hide Instructions" : "How to Install on iOS"}
+                </button>
+                {showIOSInstructions && (
+                  <div className="flex flex-col gap-2 rounded-xl bg-slate-900/50 p-4 border border-white/5 mt-3">
+                    <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Smartphone size={14} className="text-indigo-400" />
+                      iOS Safari Installation Steps:
+                    </p>
+                    <ol className="text-xs text-slate-400 space-y-2 pl-1">
+                      <li className="flex items-start gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300">1</span>
+                        <span>Tap the <span className="inline-flex items-center gap-0.5 rounded bg-white/10 px-1 py-0.5 text-white font-medium"><Share size={11} /> Share button</span> in the bottom toolbar of Safari.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300">2</span>
+                        <span>Scroll down the share sheet and select <span className="inline-flex items-center gap-1 rounded bg-white/10 px-1 py-0.5 text-white font-medium"><PlusSquare size={11} /> Add to Home Screen</span>.</span>
+                      </li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={handlePWAInstall}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all active:scale-95"
+              >
+                <Download size={14} />
+                Install Web App
+              </button>
+            )}
+          </div>
+        )}
+      </motion.div>
+
+      {/* Logout */}
+      <motion.div custom={7} variants={fadeUp} initial="hidden" animate="show"
         className="glass-card rounded-2xl p-6 border border-red-500/20">
         <h2 className="font-semibold text-lg mb-2 flex items-center gap-2">
           <LogOut size={18} className="text-red-400" />

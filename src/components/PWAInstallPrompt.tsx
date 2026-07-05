@@ -53,6 +53,8 @@ export default function PWAInstallPrompt() {
       e.preventDefault();
       // Save the event so it can be triggered later
       setDeferredPrompt(e);
+      // Save it globally on window so other components can access it (like settings page)
+      (window as any).deferredPrompt = e;
       
       // Check if user dismissed it recently (e.g. within 3 days)
       const dismissedTime = localStorage.getItem("pwa_dismissed_time");
@@ -60,17 +62,26 @@ export default function PWAInstallPrompt() {
       const isRecentlyDismissed = dismissedTime && Date.now() - parseInt(dismissedTime) < threeDays;
 
       if (!isRecentlyDismissed) {
-        // Delay showing the prompt for a premium entrance
+        // Delay showing the prompt for a premium entrance (2 seconds)
         const timer = setTimeout(() => {
           setShowPrompt(true);
-        }, 4000);
+        }, 2000);
         return () => clearTimeout(timer);
       }
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
 
-    // 5. Fallback for iOS since beforeinstallprompt is not supported
+    // 5. Handle app installed event (fires when PWA is successfully installed)
+    const handleAppInstalled = () => {
+      setIsStandalone(true);
+      setShowPrompt(false);
+      setDeferredPrompt(null);
+      (window as any).deferredPrompt = null;
+    };
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    // 6. Fallback for iOS since beforeinstallprompt is not supported
     if (iosDevice) {
       const dismissedTime = localStorage.getItem("pwa_dismissed_time");
       const threeDays = 3 * 24 * 60 * 60 * 1000;
@@ -79,13 +90,14 @@ export default function PWAInstallPrompt() {
       if (!isRecentlyDismissed) {
         const timer = setTimeout(() => {
           setShowPrompt(true);
-        }, 6000); // Wait slightly longer for iOS to let content settle
+        }, 2000); // 2 seconds delay
         return () => clearTimeout(timer);
       }
     }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
