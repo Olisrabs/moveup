@@ -389,7 +389,6 @@ export default function TasksPage() {
     }).eq("id", proofTask.id);
 
     // Notify other room members
-    const room = rooms.find((r) => r.id === proofTask.room_id);
     const { data: members } = await supabase
       .from("room_members").select("user_id")
       .eq("room_id", proofTask.room_id).neq("user_id", user.id);
