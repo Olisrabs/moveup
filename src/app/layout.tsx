@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import PublicShell from "@/components/PublicShell";
+import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 
@@ -11,9 +12,10 @@ export const metadata: Metadata = {
   title: "MoveUp - Accountability Platform",
   description:
     "Join private rooms, commit to tasks, upload proof, and compete for the reward pool.",
+  manifest: "/manifest.json",
   icons: {
     icon: "/moveup.png",
-    apple: "/moveup.png",
+    apple: "/icon.svg",
   },
 };
 
@@ -43,6 +45,7 @@ export default function RootLayout({
         <AuthProvider>
           <PublicShell>{children}</PublicShell>
         </AuthProvider>
+        <PWAInstallPrompt />
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID!} />
       </body>
     </html>
