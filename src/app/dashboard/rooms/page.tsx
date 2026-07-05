@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Room, type TaskWithProof, formatNaira } from "@/lib/supabase";
+import { cache, TTL } from "@/lib/cache";
 
 type RoomWithMembers = Room & { member_count: number };
 type LeaderboardEntry = {
@@ -134,19 +135,40 @@ export default function RoomsPage() {
   const [deletingRoom, setDeletingRoom] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const fetchRooms = useCallback(async () => {
+  const fetchRooms = useCallback(async (opts?: { skipCache?: boolean }) => {
     if (!user) return;
+
+    const ROOMS_KEY = `rooms:list:${user.id}`;
+
+    // ── 1. Paint instantly from cache ────────────────────────────────────────
+    if (!opts?.skipCache) {
+      const cachedRooms = cache.getStale<RoomWithMembers[]>(ROOMS_KEY);
+      if (cachedRooms) {
+        setRooms(cachedRooms);
+        setLoading(false);
+      }
+    }
+
+    // ── 2. Revalidate from DB ─────────────────────────────────────────────
     const { data: memberRows } = await supabase.from("room_members").select("room_id").eq("user_id", user.id);
     const ids = (memberRows ?? []).map((m) => m.room_id);
-    if (ids.length === 0) { setRooms([]); setLoading(false); return; }
+    if (ids.length === 0) { setRooms([]); cache.set(ROOMS_KEY, [], TTL.ROOMS); setLoading(false); return; }
+
     const { data: roomData } = await supabase.from("rooms").select("*").in("id", ids).order("created_at", { ascending: false });
-    const withCounts: RoomWithMembers[] = await Promise.all(
-      (roomData ?? []).map(async (room) => {
-        const { count } = await supabase.from("room_members").select("*", { count: "exact", head: true }).eq("room_id", room.id);
-        return { ...room, member_count: count ?? 0 };
-      })
-    );
+
+    // Batch member counts — one query instead of N
+    const { data: countRows } = await supabase.from("room_members").select("room_id").in("room_id", ids);
+    const countMap: Record<string, number> = {};
+    (countRows ?? []).forEach((row) => {
+      countMap[row.room_id] = (countMap[row.room_id] ?? 0) + 1;
+    });
+
+    const withCounts: RoomWithMembers[] = (roomData ?? []).map((room) => ({
+      ...room,
+      member_count: countMap[room.id] ?? 0,
+    }));
     setRooms(withCounts);
+    cache.set(ROOMS_KEY, withCounts, TTL.ROOMS);
     setLoading(false);
   }, [user]);
 
@@ -280,7 +302,8 @@ export default function RoomsPage() {
     await refreshProfile();
     setShowCreate(false);
     setForm({ name: "", description: "", duration_days: "30", commitment_fee: "500", max_members: "" });
-    fetchRooms(); setCreating(false);
+    cache.invalidate(`rooms:list:${user.id}`);
+    fetchRooms({ skipCache: true }); setCreating(false);
   };
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -334,7 +357,8 @@ export default function RoomsPage() {
     }
     await refreshProfile();
     setShowJoin(false); setJoinCode(""); setJoinName("");
-    fetchRooms(); setJoining(false);
+    cache.invalidate(`rooms:list:${user.id}`);
+    fetchRooms({ skipCache: true }); setJoining(false);
   };
 
   const distributePrizes = async () => {
@@ -373,7 +397,8 @@ export default function RoomsPage() {
         setDistributeSuccess(false);
         setSelectedRoom(null);
         backToLeaderboard();
-        fetchRooms();
+        cache.invalidate(`rooms:list:${user.id}`);
+        fetchRooms({ skipCache: true });
       }, 2000);
     } catch (err: any) {
       setDistributeError(err?.message || "An unexpected error occurred.");
@@ -388,7 +413,9 @@ export default function RoomsPage() {
     if (!isRoomExpired(selectedRoom)) { setDeleteError("You can only delete a room after it has expired."); setDeletingRoom(false); return; }
     const { error } = await supabase.from("rooms").delete().eq("id", selectedRoom.id);
     if (error) { setDeleteError(error.message); setDeletingRoom(false); return; }
-    setSelectedRoom(null); backToLeaderboard(); fetchRooms(); setDeletingRoom(false);
+    setSelectedRoom(null); backToLeaderboard();
+    cache.invalidate(`rooms:list:${user.id}`);
+    fetchRooms({ skipCache: true }); setDeletingRoom(false);
   };
 
   const copyCode = (code: string, e: React.MouseEvent) => {

@@ -20,6 +20,7 @@ const editMinutesLeft = (task: { created_at: string }): number => {
 };
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Task, type Room } from "@/lib/supabase";
+import { cache, TTL } from "@/lib/cache";
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -58,8 +59,24 @@ export default function TasksPage() {
   const [proofError, setProofError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { skipCache?: boolean }) => {
     if (!user) return;
+
+    const TASKS_KEY = `tasks:${user.id}`;
+    const ROOMS_KEY = `tasks:rooms:${user.id}`;
+
+    // ── 1. Show cached data immediately if available ──────────────────────────
+    if (!opts?.skipCache) {
+      const cachedTasks = cache.getStale<Task[]>(TASKS_KEY);
+      const cachedRooms = cache.getStale<Room[]>(ROOMS_KEY);
+      if (cachedTasks && cachedRooms) {
+        setTasks(cachedTasks);
+        setRooms(cachedRooms);
+        setLoading(false);
+      }
+    }
+
+    // ── 2. Always revalidate from DB ──────────────────────────────────────────
     const [{ data: taskData }, { data: memberRooms }] = await Promise.all([
       supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("room_members").select("room_id").eq("user_id", user.id),
@@ -74,14 +91,15 @@ export default function TasksPage() {
         .in("id", roomIds);
       loadedRooms = roomData ?? [];
       setRooms(loadedRooms);
+      cache.set(ROOMS_KEY, loadedRooms, TTL.ROOMS_DETAIL);
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
     const processedTasks = (taskData ?? []).map(t => {
       const room = loadedRooms.find((r) => r.id === t.room_id);
-      const isRoomCompleted = room?.status === "completed" || room?.prize_distributed === true;
+      const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
 
-      if (t.is_recurring && t.status === "completed" && !isRoomCompleted) {
+      if (t.is_recurring && t.status === "completed" && isRoomActive) {
         const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
         if (completedDate !== todayStr) {
           supabase.from("tasks").update({ status: "pending" }).eq("id", t.id).then();
@@ -92,6 +110,7 @@ export default function TasksPage() {
     });
 
     setTasks(processedTasks);
+    cache.set(TASKS_KEY, processedTasks, TTL.TASKS);
     setLoading(false);
   };
 
@@ -226,7 +245,9 @@ export default function TasksPage() {
     if (error) { setAddError(error.message); setAdding(false); return; }
     setShowAdd(false);
     setForm({ title: "", description: "", room_id: "", due_date: "", scheduled_time: "", is_recurring: false });
-    fetchData(); setAdding(false);
+    // Bust tasks cache so the new task appears fresh
+    cache.invalidate(`tasks:${user.id}`);
+    fetchData({ skipCache: true }); setAdding(false);
   };
 
   const openProofModal = (task: Task) => {
@@ -404,6 +425,10 @@ export default function TasksPage() {
     }
 
     setTasks((prev) => prev.map((t) => t.id === proofTask.id ? { ...t, status: "completed", last_completed_at: nowStr } : t));
+    // Bust caches so dashboard reflects the completion
+    cache.invalidate(`tasks:${user.id}`);
+    cache.invalidate(`dashboard:tasks:${user.id}`);
+    cache.invalidate(`dashboard:proofCount:${user.id}`);
     // Clean up object URLs to free memory
     proofFilePreviews.forEach((url) => URL.revokeObjectURL(url));
     setProofFiles([]); setProofFilePreviews([]); setProofFileBuffers([]);
@@ -423,6 +448,8 @@ export default function TasksPage() {
     await supabase.from("proofs").delete().eq("task_id", deleteTask.id);
     await supabase.from("tasks").delete().eq("id", deleteTask.id);
     setTasks(prev => prev.filter(t => t.id !== deleteTask.id));
+    cache.invalidate(`tasks:${user.id}`);
+    cache.invalidate(`dashboard:tasks:${user.id}`);
     setDeleteTask(null);
     setDeleting(false);
   };

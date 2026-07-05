@@ -11,6 +11,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { supabase, type UserProfile } from "./supabase";
 import { isSuperAdmin, isPartner, isObserver, isStaff } from "./roles";
+import { cache } from "./cache";
 // UserProfile.balance replaces the old UserProfile.coins field (migration_v4)
 
 type AuthContextType = {
@@ -58,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    cache.clear();
     setUser(null);
     setProfile(null);
   }, []);

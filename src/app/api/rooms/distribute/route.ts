@@ -219,6 +219,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to mark room as completed" }, { status: 500 });
     }
 
+    // 9. Disable recurring flag on all tasks in this room so they can never
+    //    be auto-reset by the daily lazy-reset logic after the room ends.
+    const { error: recurringClearErr } = await adminDb
+      .from("tasks")
+      .update({ is_recurring: false })
+      .eq("room_id", room.id)
+      .eq("is_recurring", true);
+
+    if (recurringClearErr) {
+      // Non-fatal: log but don't block the response — room is already marked complete.
+      console.error("Error clearing recurring flag on tasks:", recurringClearErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: "Prizes distributed successfully",

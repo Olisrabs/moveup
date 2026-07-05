@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, type Room, type Task, formatNaira } from "@/lib/supabase";
+import { cache, TTL } from "@/lib/cache";
 
 type RoomWithMembers = Room & { member_count: number };
 
@@ -39,8 +40,26 @@ export default function DashboardOverview() {
 
   useEffect(() => {
     if (!user) return;
+
+    const ROOMS_KEY  = `dashboard:rooms:${user.id}`;
+    const TASKS_KEY  = `dashboard:tasks:${user.id}`;
+    const PROOFS_KEY = `dashboard:proofCount:${user.id}`;
+    const META_KEY   = `dashboard:memberRooms:${user.id}`;
+
+    // ── 1. Paint from cache instantly (stale-while-revalidate) ───────────────
+    const cachedRooms  = cache.getStale<RoomWithMembers[]>(ROOMS_KEY);
+    const cachedTasks  = cache.getStale<Task[]>(TASKS_KEY);
+    const cachedProofs = cache.getStale<number>(PROOFS_KEY);
+
+    if (cachedRooms && cachedTasks && cachedProofs !== null) {
+      setRooms(cachedRooms);
+      setTasks(cachedTasks);
+      setTotalProofsCount(cachedProofs);
+      setLoading(false);
+    }
+
+    // ── 2. Revalidate in background (always runs) ────────────────────────────
     const load = async () => {
-      // Fetch rooms the user is a member of
       const { data: memberRooms } = await supabase
         .from("room_members")
         .select("room_id")
@@ -55,6 +74,7 @@ export default function DashboardOverview() {
           .select("id, status, prize_distributed")
           .in("id", roomIds);
         allMemberRooms = (allRooms ?? []) as any;
+        cache.set(META_KEY, allMemberRooms, TTL.ROOMS);
 
         const { data: roomData } = await supabase
           .from("rooms")
@@ -65,39 +85,47 @@ export default function DashboardOverview() {
           .order("created_at", { ascending: false })
           .limit(4);
 
-        // Get member counts
-        const roomsWithCounts: RoomWithMembers[] = await Promise.all(
-          (roomData ?? []).map(async (room) => {
-            const { count } = await supabase
-              .from("room_members")
-              .select("*", { count: "exact", head: true })
-              .eq("room_id", room.id);
-            return { ...room, member_count: count ?? 0 };
-          })
-        );
+        // Batch member counts — one query instead of N
+        const activeRoomIds = (roomData ?? []).map((r) => r.id);
+        let countMap: Record<string, number> = {};
+        if (activeRoomIds.length > 0) {
+          const { data: countRows } = await supabase
+            .from("room_members")
+            .select("room_id")
+            .in("room_id", activeRoomIds);
+          (countRows ?? []).forEach((row) => {
+            countMap[row.room_id] = (countMap[row.room_id] ?? 0) + 1;
+          });
+        }
+
+        const roomsWithCounts: RoomWithMembers[] = (roomData ?? []).map((room) => ({
+          ...room,
+          member_count: countMap[room.id] ?? 0,
+        }));
         setRooms(roomsWithCounts);
+        cache.set(ROOMS_KEY, roomsWithCounts, TTL.ROOMS);
       }
 
-      // Fetch all tasks and proofs for accurate counts and apply lazy reset
       const [
         { data: taskData },
         { count: proofCount }
       ] = await Promise.all([
         supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
-        supabase.from("proofs").select("*", { count: "exact", head: true }).eq("user_id", user.id)
+        supabase.from("proofs").select("*", { count: "exact", head: true }).eq("user_id", user.id),
       ]);
 
-      setTotalProofsCount(proofCount ?? 0);
+      const freshProofCount = proofCount ?? 0;
+      setTotalProofsCount(freshProofCount);
+      cache.set(PROOFS_KEY, freshProofCount, TTL.PROOF_COUNT);
 
       const todayStr = new Date().toISOString().split("T")[0];
       const processedTasks = (taskData ?? []).map(t => {
         const room = allMemberRooms.find((r) => r.id === t.room_id);
-        const isRoomCompleted = room?.status === "completed" || room?.prize_distributed === true;
+        const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
 
-        if (t.is_recurring && t.status === "completed" && !isRoomCompleted) {
+        if (t.is_recurring && t.status === "completed" && isRoomActive) {
           const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
           if (completedDate !== todayStr) {
-            // Lazily update DB in background
             supabase.from("tasks").update({ status: "pending" }).eq("id", t.id).then();
             return { ...t, status: "pending" as const };
           }
@@ -106,8 +134,10 @@ export default function DashboardOverview() {
       });
 
       setTasks(processedTasks);
+      cache.set(TASKS_KEY, processedTasks, TTL.TASKS);
       setLoading(false);
     };
+
     load();
   }, [user]);
 

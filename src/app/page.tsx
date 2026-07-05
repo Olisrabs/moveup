@@ -1,10 +1,37 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight, CheckCircle, Shield, Trophy } from "lucide-react";
+import { ArrowRight, CheckCircle, Shield, Trophy, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function Home() {
+  const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  // Redirect logged-in users straight to their dashboard.
+  // getSession() reads from localStorage — no network request needed.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        router.replace("/dashboard");
+      } else {
+        setChecking(false);
+      }
+    });
+  }, [router]);
+
+  // Brief loading state while session is read — prevents landing page flash
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
