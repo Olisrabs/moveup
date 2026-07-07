@@ -66,12 +66,12 @@ export default function DashboardOverview() {
         .eq("user_id", user.id);
 
       const roomIds = (memberRooms ?? []).map((m) => m.room_id);
-      let allMemberRooms: { id: string; status: string; prize_distributed: boolean }[] = [];
+      let allMemberRooms: { id: string; status: string; prize_distributed: boolean; ends_at: string }[] = [];
 
       if (roomIds.length > 0) {
         const { data: allRooms } = await supabase
           .from("rooms")
-          .select("id, status, prize_distributed")
+          .select("id, status, prize_distributed, ends_at")
           .in("id", roomIds);
         allMemberRooms = (allRooms ?? []) as any;
         cache.set(META_KEY, allMemberRooms, TTL.ROOMS);
@@ -121,7 +121,7 @@ export default function DashboardOverview() {
       const todayStr = new Date().toISOString().split("T")[0];
       const processedTasks = (taskData ?? []).map(t => {
         const room = allMemberRooms.find((r) => r.id === t.room_id);
-        const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
+        const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true && new Date(room.ends_at).getTime() > Date.now();
 
         if (t.is_recurring && t.status === "completed" && isRoomActive) {
           const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;

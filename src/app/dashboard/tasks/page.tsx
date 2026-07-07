@@ -97,7 +97,7 @@ export default function TasksPage() {
     const todayStr = new Date().toISOString().split("T")[0];
     const processedTasks = (taskData ?? []).map(t => {
       const room = loadedRooms.find((r) => r.id === t.room_id);
-      const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
+      const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true && new Date(room.ends_at).getTime() > Date.now();
 
       if (t.is_recurring && t.status === "completed" && isRoomActive) {
         const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
@@ -442,7 +442,7 @@ export default function TasksPage() {
   };
 
   const handleDeleteTask = async () => {
-    if (!deleteTask) return;
+    if (!deleteTask || !user) return;
     setDeleting(true);
     // Delete associated proofs first (FK constraint), then the task
     await supabase.from("proofs").delete().eq("task_id", deleteTask.id);
