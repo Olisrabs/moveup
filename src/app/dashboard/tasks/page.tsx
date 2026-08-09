@@ -44,6 +44,7 @@ export default function TasksPage() {
   // Delete task
   const [deleteTask, setDeleteTask] = useState<Task | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Proof modal
   const [proofTask, setProofTask] = useState<Task | null>(null);
@@ -97,7 +98,7 @@ export default function TasksPage() {
     const todayStr = new Date().toISOString().split("T")[0];
     const processedTasks = (taskData ?? []).map(t => {
       const room = loadedRooms.find((r) => r.id === t.room_id);
-      const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true && new Date(room.ends_at).getTime() > Date.now();
+      const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
 
       if (t.is_recurring && t.status === "completed" && isRoomActive) {
         const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
@@ -109,8 +110,13 @@ export default function TasksPage() {
       return t;
     });
 
-    setTasks(processedTasks);
-    cache.set(TASKS_KEY, processedTasks, TTL.TASKS);
+    const activeTasks = processedTasks.filter(t => {
+      const room = loadedRooms.find((r) => r.id === t.room_id);
+      return room !== undefined && (t.status === "completed" || (room.status !== "completed" && room.prize_distributed !== true));
+    });
+
+    setTasks(activeTasks);
+    cache.set(TASKS_KEY, activeTasks, TTL.TASKS);
     setLoading(false);
   };
 
@@ -444,9 +450,21 @@ export default function TasksPage() {
   const handleDeleteTask = async () => {
     if (!deleteTask || !user) return;
     setDeleting(true);
-    // Delete associated proofs first (FK constraint), then the task
-    await supabase.from("proofs").delete().eq("task_id", deleteTask.id);
-    await supabase.from("tasks").delete().eq("id", deleteTask.id);
+    setDeleteError(null);
+    // Delete associated proofs first (FK constraint)
+    const { error: proofsError } = await supabase.from("proofs").delete().eq("task_id", deleteTask.id);
+    if (proofsError) {
+      setDeleteError(`Failed to delete task proofs: ${proofsError.message}`);
+      setDeleting(false);
+      return;
+    }
+    // Then delete the task itself
+    const { error: taskError } = await supabase.from("tasks").delete().eq("id", deleteTask.id);
+    if (taskError) {
+      setDeleteError(`Failed to delete task: ${taskError.message}`);
+      setDeleting(false);
+      return;
+    }
     setTasks(prev => prev.filter(t => t.id !== deleteTask.id));
     cache.invalidate(`tasks:${user.id}`);
     cache.invalidate(`dashboard:tasks:${user.id}`);
@@ -890,7 +908,7 @@ export default function TasksPage() {
         {deleteTask && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => !deleting && setDeleteTask(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+              onClick={() => { if (!deleting) { setDeleteTask(null); setDeleteError(null); } }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="bg-card border border-border rounded-3xl p-7 w-full max-w-sm shadow-2xl">
@@ -903,6 +921,7 @@ export default function TasksPage() {
                     <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
                   </div>
                 </div>
+                {deleteError && <p className="text-red-500 text-sm bg-red-500/10 px-4 py-2.5 rounded-xl mb-4">{deleteError}</p>}
                 <p className="text-sm text-muted-foreground mb-6">
                   You are about to permanently delete{" "}
                   <span className="font-semibold text-foreground">&quot;{deleteTask.title}&quot;</span>{" "}
@@ -910,7 +929,7 @@ export default function TasksPage() {
                 </p>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setDeleteTask(null)}
+                    onClick={() => { setDeleteTask(null); setDeleteError(null); }}
                     disabled={deleting}
                     className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-all disabled:opacity-50">
                     Cancel

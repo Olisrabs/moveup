@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
 
     if (smtpHost && smtpUser && smtpPass) {
       try {
+        // @ts-ignore
         const nodemailer = (await import("nodemailer")) as any;
         const transporter = nodemailer.default.createTransport({
           host: smtpHost,

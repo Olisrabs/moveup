@@ -135,6 +135,13 @@ export default function RoomsPage() {
   const [deletingRoom, setDeletingRoom] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Extend room states
+  const [showExtend, setShowExtend] = useState(false);
+  const [extendDays, setExtendDays] = useState("7");
+  const [extending, setExtending] = useState(false);
+  const [extendError, setExtendError] = useState<string | null>(null);
+  const [extendSuccess, setExtendSuccess] = useState(false);
+
   const fetchRooms = useCallback(async (opts?: { skipCache?: boolean }) => {
     if (!user) return;
 
@@ -251,6 +258,7 @@ export default function RoomsPage() {
     setDrawerView('leaderboard');
     setViewingMember(null);
     setMemberTasks([]);
+    setShowExtend(false);
   };
 
   const generateCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -303,6 +311,12 @@ export default function RoomsPage() {
     setShowCreate(false);
     setForm({ name: "", description: "", duration_days: "30", commitment_fee: "500", max_members: "" });
     cache.invalidate(`rooms:list:${user.id}`);
+    cache.invalidate(`tasks:${user.id}`);
+    cache.invalidate(`tasks:rooms:${user.id}`);
+    cache.invalidate(`dashboard:rooms:${user.id}`);
+    cache.invalidate(`dashboard:tasks:${user.id}`);
+    cache.invalidate(`dashboard:proofCount:${user.id}`);
+    cache.invalidate(`dashboard:memberRooms:${user.id}`);
     fetchRooms({ skipCache: true }); setCreating(false);
   };
 
@@ -358,6 +372,12 @@ export default function RoomsPage() {
     await refreshProfile();
     setShowJoin(false); setJoinCode(""); setJoinName("");
     cache.invalidate(`rooms:list:${user.id}`);
+    cache.invalidate(`tasks:${user.id}`);
+    cache.invalidate(`tasks:rooms:${user.id}`);
+    cache.invalidate(`dashboard:rooms:${user.id}`);
+    cache.invalidate(`dashboard:tasks:${user.id}`);
+    cache.invalidate(`dashboard:proofCount:${user.id}`);
+    cache.invalidate(`dashboard:memberRooms:${user.id}`);
     fetchRooms({ skipCache: true }); setJoining(false);
   };
 
@@ -398,6 +418,12 @@ export default function RoomsPage() {
         setSelectedRoom(null);
         backToLeaderboard();
         cache.invalidate(`rooms:list:${user.id}`);
+        cache.invalidate(`tasks:${user.id}`);
+        cache.invalidate(`tasks:rooms:${user.id}`);
+        cache.invalidate(`dashboard:rooms:${user.id}`);
+        cache.invalidate(`dashboard:tasks:${user.id}`);
+        cache.invalidate(`dashboard:proofCount:${user.id}`);
+        cache.invalidate(`dashboard:memberRooms:${user.id}`);
         fetchRooms({ skipCache: true });
       }, 2000);
     } catch (err: any) {
@@ -415,7 +441,87 @@ export default function RoomsPage() {
     if (error) { setDeleteError(error.message); setDeletingRoom(false); return; }
     setSelectedRoom(null); backToLeaderboard();
     cache.invalidate(`rooms:list:${user.id}`);
+    cache.invalidate(`tasks:${user.id}`);
+    cache.invalidate(`tasks:rooms:${user.id}`);
+    cache.invalidate(`dashboard:rooms:${user.id}`);
+    cache.invalidate(`dashboard:tasks:${user.id}`);
+    cache.invalidate(`dashboard:proofCount:${user.id}`);
+    cache.invalidate(`dashboard:memberRooms:${user.id}`);
     fetchRooms({ skipCache: true }); setDeletingRoom(false);
+  };
+
+  const calculateNewEndDate = () => {
+    if (!selectedRoom) return "";
+    const days = parseInt(extendDays) || 0;
+    const currentEndsAt = new Date(selectedRoom.ends_at);
+    const baseTime = currentEndsAt.getTime() < Date.now() ? Date.now() : currentEndsAt.getTime();
+    const newDate = new Date(baseTime + days * 86400000);
+    return newDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const handleExtendRoom = async () => {
+    if (!selectedRoom || !user) return;
+    const days = parseInt(extendDays);
+    if (isNaN(days) || days <= 0) {
+      setExtendError("Please enter a valid number of days.");
+      return;
+    }
+    setExtending(true);
+    setExtendError(null);
+    setExtendSuccess(false);
+
+    try {
+      const currentEndsAt = new Date(selectedRoom.ends_at);
+      const baseTime = currentEndsAt.getTime() < Date.now() ? Date.now() : currentEndsAt.getTime();
+      const newEndsAt = new Date(baseTime + days * 86400000).toISOString();
+      const newDurationDays = (selectedRoom.duration_days ?? 0) + days;
+
+      const { data: updatedRoom, error } = await supabase
+        .from("rooms")
+        .update({
+          ends_at: newEndsAt,
+          duration_days: newDurationDays,
+          status: "active",
+          prize_distributed: false,
+        })
+        .eq("id", selectedRoom.id)
+        .select()
+        .single();
+
+      if (error) {
+        setExtendError(error.message);
+        setExtending(false);
+        return;
+      }
+
+      setExtendSuccess(true);
+      cache.invalidate(`rooms:list:${user.id}`);
+      cache.invalidate(`tasks:${user.id}`);
+      cache.invalidate(`tasks:rooms:${user.id}`);
+      cache.invalidate(`dashboard:rooms:${user.id}`);
+      cache.invalidate(`dashboard:tasks:${user.id}`);
+      cache.invalidate(`dashboard:proofCount:${user.id}`);
+      cache.invalidate(`dashboard:memberRooms:${user.id}`);
+
+      const mergedRoom = {
+        ...selectedRoom,
+        ...updatedRoom,
+        member_count: selectedRoom.member_count,
+      };
+      setSelectedRoom(mergedRoom);
+      setRooms(prev => prev.map(r => r.id === selectedRoom.id ? mergedRoom : r));
+      setCooldownSeconds(checkCooldown(mergedRoom.last_reminder_at));
+
+      setTimeout(() => {
+        setExtendSuccess(false);
+        setShowExtend(false);
+      }, 2000);
+
+    } catch (err: any) {
+      setExtendError(err?.message || "An unexpected error occurred.");
+    } finally {
+      setExtending(false);
+    }
   };
 
   const copyCode = (code: string, e: React.MouseEvent) => {
@@ -675,6 +781,83 @@ export default function RoomsPage() {
                     {isRoomExpired(selectedRoom) && selectedRoom.created_by !== user?.id && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/30 px-4 py-2.5 rounded-xl">
                         <AlertCircle size={14} /> Room has expired. Waiting for creator to distribute prizes.
+                      </div>
+                    )}
+
+                    {/* Creator Actions: Extend Room */}
+                    {selectedRoom.created_by === user?.id && (
+                      <div className="space-y-2 pt-3 border-t border-border mt-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-muted-foreground">Creator Settings</p>
+                          <button
+                            onClick={() => {
+                              setShowExtend(!showExtend);
+                              setExtendError(null);
+                              setExtendSuccess(false);
+                            }}
+                            className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+                          >
+                            {showExtend ? "Cancel" : "Extend Room"}
+                          </button>
+                        </div>
+
+                        {showExtend && (
+                          <div className="bg-secondary/20 border border-border/60 rounded-xl p-3.5 space-y-3 mt-1.5">
+                            {extendError && (
+                              <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-xl">
+                                {extendError}
+                              </p>
+                            )}
+                            {extendSuccess && (
+                              <p className="text-xs text-emerald-500 bg-emerald-500/10 px-3 py-2 rounded-xl">
+                                Room extended successfully!
+                              </p>
+                            )}
+                            
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-muted-foreground block">
+                                Days to add:
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  required
+                                  className="w-20 bg-background border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-semibold"
+                                  value={extendDays}
+                                  onChange={(e) => setExtendDays(e.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleExtendRoom}
+                                  disabled={extending || extendSuccess}
+                                  className="flex-1 bg-primary text-primary-foreground font-semibold rounded-lg text-xs hover:bg-primary/90 transition-all flex items-center justify-center gap-1 disabled:opacity-60 py-1.5"
+                                >
+                                  {extending ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    "Add Days"
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="text-[10px] text-muted-foreground space-y-1 pt-1 border-t border-border/40">
+                              <div className="flex justify-between">
+                                <span>Current End Date:</span>
+                                <span>
+                                  {new Date(selectedRoom.ends_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>New End Date:</span>
+                                <span className="font-semibold text-primary">
+                                  {calculateNewEndDate()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </motion.div>

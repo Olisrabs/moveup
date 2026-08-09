@@ -121,7 +121,7 @@ export default function DashboardOverview() {
       const todayStr = new Date().toISOString().split("T")[0];
       const processedTasks = (taskData ?? []).map(t => {
         const room = allMemberRooms.find((r) => r.id === t.room_id);
-        const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true && new Date(room.ends_at).getTime() > Date.now();
+        const isRoomActive = room !== undefined && room.status !== "completed" && room.prize_distributed !== true;
 
         if (t.is_recurring && t.status === "completed" && isRoomActive) {
           const completedDate = t.last_completed_at ? t.last_completed_at.split("T")[0] : null;
@@ -133,8 +133,13 @@ export default function DashboardOverview() {
         return t;
       });
 
-      setTasks(processedTasks);
-      cache.set(TASKS_KEY, processedTasks, TTL.TASKS);
+      const activeTasks = processedTasks.filter(t => {
+        const room = allMemberRooms.find((r) => r.id === t.room_id);
+        return room !== undefined && (t.status === "completed" || (room.status !== "completed" && room.prize_distributed !== true));
+      });
+
+      setTasks(activeTasks);
+      cache.set(TASKS_KEY, activeTasks, TTL.TASKS);
       setLoading(false);
     };
 
